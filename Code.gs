@@ -1,0 +1,648 @@
+/* Code.gs for CitadelCRM_DB */
+
+function getDb() {
+  return SpreadsheetApp.getActiveSpreadsheet();
+}
+
+function doGet(e) {
+  return handleRequest(e, 'GET');
+}
+
+function doPost(e) {
+  return handleRequest(e, 'POST');
+}
+
+function handleRequest(e, method) {
+  try {
+    let params = {};
+    if (method === 'POST') {
+      if (e.postData && e.postData.contents) {
+        params = JSON.parse(e.postData.contents);
+      }
+    } else {
+      params = e.parameter;
+    }
+
+    let action = params.action;
+    let result = { success: false, message: 'Unknown action' };
+    
+    switch (action) {
+      case 'login': result = handleLogin(params); break;
+      case 'changePassword': result = handleChangePassword(params); break;
+
+      case 'getUsers': result = handleGetUsers(params); break;
+      case 'createUser': result = handleCreateUser(params); break;
+      case 'updateUser': result = handleUpdateUser(params); break;
+      case 'deactivateUser': result = handleDeactivateUser(params); break;
+
+      case 'getCustomers': result = handleGetCustomers(params); break;
+      case 'getCustomerById': result = handleGetCustomerById(params); break;
+      case 'createCustomer': result = handleCreateCustomer(params); break;
+      case 'updateCustomer': result = handleUpdateCustomer(params); break;
+
+      case 'getLeads': result = handleGetLeads(params); break;
+      case 'getLeadById': result = handleGetLeadById(params); break;
+      case 'createLead': result = handleCreateLead(params); break;
+      case 'updateLead': result = handleUpdateLead(params); break;
+
+      case 'getInteractions': result = handleGetInteractions(params); break;
+      case 'createInteraction': result = handleCreateInteraction(params); break;
+
+      case 'getQuotations': result = handleGetQuotations(params); break;
+      case 'createQuotation': result = handleCreateQuotation(params); break;
+      case 'updateQuotation': result = handleUpdateQuotation(params); break;
+      case 'approveQuotation': result = handleApproveQuotation(params); break;
+
+      case 'getOrders': result = handleGetOrders(params); break;
+      case 'createOrder': result = handleCreateOrder(params); break;
+      case 'updateOrderStatus': result = handleUpdateOrderStatus(params); break;
+
+      case 'getPayments': result = handleGetPayments(params); break;
+      case 'createPayment': result = handleCreatePayment(params); break;
+      case 'updatePayment': result = handleUpdatePayment(params); break;
+      case 'approveCredit': result = handleApproveCredit(params); break;
+
+      case 'getReminders': result = handleGetReminders(params); break;
+      case 'updateReminderStatus': result = handleUpdateReminderStatus(params); break;
+      case 'createReminder': result = handleCreateReminderAction(params); break;
+
+      case 'getSettings': result = handleGetSettings(params); break;
+      case 'updateSetting': result = handleUpdateSetting(params); break;
+
+      case 'getDashboardStats': result = handleGetDashboardStats(params); break;
+
+      default:
+        result = { success: false, message: 'Invalid or missing action' };
+    }
+    return setCORSHeaders(ContentService.createTextOutput(JSON.stringify(result)));
+  } catch (err) {
+    return setCORSHeaders(ContentService.createTextOutput(JSON.stringify({ success: false, message: err.message, stack: err.stack })));
+  }
+}
+
+function setCORSHeaders(output) {
+  return output
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ======================= HELPER FUNCTIONS =======================
+function getSheetData(sheetName) {
+  const sheet = getDb().getSheetByName(sheetName);
+  if (!sheet) return [];
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+  const headers = data[0];
+  return data.slice(1).map(row => {
+    let obj = {};
+    headers.forEach((h, i) => obj[h] = row[i]);
+    return obj;
+  });
+}
+
+function appendRow(sheetName, rowObject) {
+  const sheet = getDb().getSheetByName(sheetName);
+  if (!sheet) throw new Error("Sheet not found: " + sheetName);
+  const headers = sheet.getDataRange().getValues()[0];
+  const rowArray = headers.map(h => rowObject[h] !== undefined ? rowObject[h] : "");
+  sheet.appendRow(rowArray);
+}
+
+function updateRow(sheetName, idColumn, idValue, updateObject) {
+  const sheet = getDb().getSheetByName(sheetName);
+  if (!sheet) throw new Error("Sheet not found: " + sheetName);
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idIndex = headers.indexOf(idColumn);
+  if (idIndex === -1) throw new Error("ID Column not found");
+  
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][idIndex] == idValue) {
+      for (const key in updateObject) {
+        let colIndex = headers.indexOf(key);
+        if (colIndex !== -1) {
+          sheet.getRange(i + 1, colIndex + 1).setValue(updateObject[key]);
+        }
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+function generateID(prefix) {
+  return prefix + "_" + new Date().toISOString().replace(/[-:T.Z]/g, "") + "_" + Math.floor(Math.random() * 1000);
+}
+
+function hashPassword(plain) {
+  const rawHash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, plain, Utilities.Charset.UTF_8);
+  return rawHash.map(b => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('');
+}
+
+function sendEmail(to, subject, htmlBody) {
+  MailApp.sendEmail({ to: to, subject: subject, htmlBody: htmlBody });
+}
+
+function sendThankYouEmail(order, customer, userDetails) {
+  const subject = `Thank you for your order! (${order.OrderID})`;
+  const body = `<h2>Dear ${customer.CustomerName},</h2>
+    <p>Thank you for ordering ${order.ProductOrdered} with Citadel.</p>
+    <p>Your order quantity: ${order.OrderQuantity}</p>
+    <p>We are processing it and will dispatch it shortly.</p>
+    <p>Best Regards,<br>Team Citadel</p>`;
+  sendEmail(customer.Email, subject, body);
+}
+
+function sendThankYouPaymentEmail(payment, customer) {
+  const subject = `Payment Received - Thank You!`;
+  const body = `<h2>Dear ${customer.CustomerName},</h2>
+    <p>We have successfully received your payment of ${payment.PaidAmount} towards Invoice ${payment.InvoiceNumber}.</p>
+    <p>Outstanding Amount: ${payment.OutstandingAmount}</p>
+    <p>Thank you for your business!</p>
+    <p>Best Regards,<br>Team Citadel</p>`;
+  sendEmail(customer.Email, subject, body);
+}
+
+function logActivity(userID, action, entityType, entityID, details) {
+  appendRow('ACTIVITY_LOGS', {
+    LogID: generateID("LOG"),
+    UserID: userID,
+    Action: action,
+    EntityType: entityType,
+    EntityID: entityID,
+    Details: details,
+    Timestamp: new Date().toISOString()
+  });
+}
+
+function getSettingsMap() {
+  const data = getSheetData('SETTINGS');
+  const map = {};
+  data.forEach(d => map[d.SettingKey] = d.SettingValue);
+  return map;
+}
+
+// ======================= ACTION HANDLERS =======================
+
+// --- AUTH ---
+function handleLogin(p) {
+  const users = getSheetData('USERS');
+  const hash = hashPassword(p.password);
+  const user = users.find(u => u.Email === p.email && u.PasswordHash === hash);
+  if (user) {
+    if (user.IsActive !== true && user.IsActive !== 'true' && user.IsActive !== 'TRUE' && user.IsActive !== 1) {
+      if(user.IsActive !== 'TRUE' && user.IsActive !== true) {
+         // handle string or boolean differences from sheet
+         if(String(user.IsActive).toLowerCase() !== 'true') return { success: false, message: "User is deactivated" };
+      }
+    }
+    updateRow('USERS', 'UserID', user.UserID, { LastLogin: new Date().toISOString() });
+    return { success: true, token: "token-" + user.UserID, user: { UserID: user.UserID, FullName: user.FullName, Role: user['Role (Admin/Staff)'] } };
+  }
+  return { success: false, message: "Invalid credentials" };
+}
+
+function handleChangePassword(p) {
+  const users = getSheetData('USERS');
+  const user = users.find(u => u.UserID === p.userID);
+  if (!user || user.PasswordHash !== hashPassword(p.oldPassword)) return { success: false, message: 'Invalid old password' };
+  updateRow('USERS', 'UserID', p.userID, { PasswordHash: hashPassword(p.newPassword) });
+  return { success: true, message: 'Password updated' };
+}
+
+// --- USERS ---
+function handleGetUsers(p) {
+  return { success: true, data: getSheetData('USERS') };
+}
+
+function handleCreateUser(p) {
+  const u = {
+    UserID: generateID("USR"),
+    FullName: p.FullName,
+    Email: p.Email,
+    Phone: p.Phone,
+    "Role (Admin/Staff)": p.Role || 'Staff',
+    PasswordHash: hashPassword(p.Password),
+    IsActive: true,
+    CreatedAt: new Date().toISOString(),
+    LastLogin: ""
+  };
+  appendRow('USERS', u);
+  return { success: true, data: u };
+}
+
+function handleUpdateUser(p) {
+  updateRow('USERS', 'UserID', p.UserID, p.updates);
+  return { success: true, message: 'User updated' };
+}
+
+function handleDeactivateUser(p) {
+  updateRow('USERS', 'UserID', p.UserID, { IsActive: false });
+  return { success: true, message: 'User deactivated' };
+}
+
+// --- CUSTOMERS ---
+function handleGetCustomers(p) {
+  let custs = getSheetData('CUSTOMERS');
+  if (p.staffID) custs = custs.filter(c => c.AssignedUserID === p.staffID);
+  return { success: true, data: custs };
+}
+
+function handleGetCustomerById(p) {
+  const c = getSheetData('CUSTOMERS').find(c => c.CustomerID == p.customerID);
+  return { success: !!c, data: c };
+}
+
+function handleCreateCustomer(p) {
+  const c = {
+    CustomerID: generateID("CUS"),
+    CustomerName: p.CustomerName,
+    Phone: p.Phone,
+    Email: p.Email,
+    CompanyName: p.CompanyName,
+    City: p.City,
+    GSTNumber: p.GSTNumber,
+    AssignedUserID: p.AssignedUserID,
+    CreatedAt: new Date().toISOString(),
+    UpdatedAt: new Date().toISOString()
+  };
+  appendRow('CUSTOMERS', c);
+  return { success: true, data: c };
+}
+
+function handleUpdateCustomer(p) {
+  p.updates.UpdatedAt = new Date().toISOString();
+  updateRow('CUSTOMERS', 'CustomerID', p.CustomerID, p.updates);
+  return { success: true, message: 'Customer updated' };
+}
+
+// --- LEADS ---
+function handleGetLeads(p) {
+  let leads = getSheetData('LEADS');
+  if (p.status) leads = leads.filter(l => l['LeadStatus (New/Contacted/Quoted/Negotiating/Won/Lost)'] === p.status);
+  if (p.assignedUser) leads = leads.filter(l => l.AssignedUserID === p.assignedUser);
+  return { success: true, data: leads };
+}
+
+function handleGetLeadById(p) {
+  const l = getSheetData('LEADS').find(x => x.LeadID === p.leadID);
+  if (!l) return { success: false, message: 'Not found' };
+  const c = getSheetData('CUSTOMERS').find(x => x.CustomerID === l.CustomerID);
+  return { success: true, data: { lead: l, customer: c } };
+}
+
+function handleCreateLead(p) {
+  let customerID = p.CustomerID;
+  if (!customerID && p.CustomerData) {
+     let cRes = handleCreateCustomer({ ...p.CustomerData, AssignedUserID: p.AssignedUserID });
+     customerID = cRes.data.CustomerID;
+  }
+  const importedStatus = p.ImportedStatus || "New";
+  const l = {
+    LeadID: generateID("LD"),
+    CustomerID: customerID,
+    "LeadSource (Phone/Instagram/Facebook/Walk-in)": p.LeadSource,
+    AdName: p.AdName || '',
+    CampaignName: p.CampaignName || '',
+    "ProductRequired (AAC Blocks/Citabond Mortar/Kavach Plaster)": p.ProductRequired,
+    QuantityRequired: p.QuantityRequired,
+    RequirementTimeline: p.RequirementTimeline,
+    "LeadStatus (New/Contacted/Quoted/Negotiating/Won/Lost)": importedStatus,
+    AssignedUserID: p.AssignedUserID,
+    ContactPerson: p.ContactPerson || '',
+    Region: p.Region || '',
+    Remark1: p.Remark1 || '',
+    Remark2: p.Remark2 || '',
+    OrderFlag: p.OrderFlag || 'N',
+    OrderValue: p.OrderValue || '',
+    PaymentStatus: p.PaymentStatus || '',
+    CreatedAt: p.ImportedDate || new Date().toISOString(),
+    UpdatedAt: new Date().toISOString()
+  };
+  appendRow('LEADS', l);
+  
+  // Create 3-day follow-up reminder
+  let t = new Date(); t.setDate(t.getDate() + 3);
+  appendRow('REMINDERS', {
+    ReminderID: generateID("REM"),
+    "Type (FollowUp/Payment/Dispatch/CrossSell/GoogleReview/Reference/Quotation)": "FollowUp",
+    LeadID: l.LeadID, OrderID: "", PaymentID: "", CustomerID: customerID,
+    AssignedUserID: p.AssignedUserID,
+    ReminderDate: t.toISOString(),
+    ReminderMessage: "Initial 3-day follow up for lead",
+    "Status (Pending/Dismissed/Completed)": "Pending",
+    CreatedAt: new Date().toISOString()
+  });
+
+  return { success: true, data: l };
+}
+
+function handleUpdateLead(p) {
+  p.updates.UpdatedAt = new Date().toISOString();
+  updateRow('LEADS', 'LeadID', p.LeadID, p.updates);
+  if (p.logUserID) logActivity(p.logUserID, "UPDATE", "LEAD", p.LeadID, JSON.stringify(p.updates));
+  return { success: true, message: 'Lead updated' };
+}
+
+// --- INTERACTIONS ---
+function handleGetInteractions(p) {
+  let res = getSheetData('INTERACTIONS').filter(i => i.LeadID === p.LeadID);
+  return { success: true, data: res };
+}
+
+function handleCreateInteraction(p) {
+  const i = {
+    InteractionID: generateID("INT"),
+    LeadID: p.LeadID,
+    CustomerID: p.CustomerID,
+    InteractionDate: new Date().toISOString(),
+    "Type (Call/Email/Visit/WhatsApp)": p.Type,
+    "Feedback (Call not received/Spoke with customer/Details shared/Waiting for approval/Other)": p.Feedback,
+    Remark1: p.Remark1 || '',
+    Remark2: p.Remark2 || '',
+    NextFollowUpDate: p.NextFollowUpDate || '',
+    "FollowUpStatus (Pending/Completed)": p.NextFollowUpDate ? "Pending" : "Completed",
+    CreatedByUserID: p.CreatedByUserID,
+    CreatedAt: new Date().toISOString()
+  };
+  appendRow('INTERACTIONS', i);
+
+  if (p.NextFollowUpDate) {
+    appendRow('REMINDERS', {
+      ReminderID: generateID("REM"),
+      "Type (FollowUp/Payment/Dispatch/CrossSell/GoogleReview/Reference/Quotation)": "FollowUp",
+      LeadID: p.LeadID, OrderID: "", PaymentID: "", CustomerID: p.CustomerID,
+      AssignedUserID: p.CreatedByUserID,
+      ReminderDate: p.NextFollowUpDate,
+      ReminderMessage: "Scheduled follow-up from interaction",
+      "Status (Pending/Dismissed/Completed)": "Pending",
+      CreatedAt: new Date().toISOString()
+    });
+  }
+  return { success: true, data: i };
+}
+
+// --- QUOTATIONS ---
+function handleGetQuotations(p) {
+  let res = getSheetData('QUOTATIONS');
+  if (p.LeadID) res = res.filter(x => x.LeadID === p.LeadID);
+  if (p.CustomerID) res = res.filter(x => x.CustomerID === p.CustomerID);
+  return { success: true, data: res };
+}
+
+function handleCreateQuotation(p) {
+  const settings = getSettingsMap();
+  const threshold = parseFloat(settings.PriceApprovalThreshold) || 3650;
+  const ppu = parseFloat(p.QuotedPricePerUnit);
+  let approval = "NotRequired";
+  if (ppu < threshold) approval = "PendingApproval"; // Typically, if price is lower than threshold, needs approval
+
+  const q = {
+    QuotationID: generateID("QUO"),
+    LeadID: p.LeadID, CustomerID: p.CustomerID,
+    "QuotationAsked (Yes/No)": p.QuotationAsked || "Yes",
+    "QuotationSent (Yes/No)": p.QuotationSent || "Yes",
+    QuotationDate: new Date().toISOString(),
+    QuotedPrice: p.QuotedPrice,
+    QuotedPricePerUnit: p.QuotedPricePerUnit,
+    Unit: p.Unit,
+    DriveFileURL: p.DriveFileURL || '',
+    Notes: p.Notes || '',
+    "ApprovalStatus (NotRequired/PendingApproval/Approved/Rejected)": approval,
+    ApprovedByUserID: "",
+    CreatedAt: new Date().toISOString(),
+    UpdatedAt: new Date().toISOString()
+  };
+  appendRow('QUOTATIONS', q);
+  
+  if (approval === "PendingApproval" && settings.AdminEmail && String(settings.AutoFollowUpEmailEnabled).toLowerCase() === 'true') {
+     sendEmail(settings.AdminEmail, "Quotation Approval Required", `Quotation ${q.QuotationID} needs approval.`);
+  }
+  return { success: true, data: q };
+}
+
+function handleUpdateQuotation(p) {
+  p.updates.UpdatedAt = new Date().toISOString();
+  updateRow('QUOTATIONS', 'QuotationID', p.QuotationID, p.updates);
+  return { success: true };
+}
+
+function handleApproveQuotation(p) {
+  updateRow('QUOTATIONS', 'QuotationID', p.QuotationID, {
+    "ApprovalStatus (NotRequired/PendingApproval/Approved/Rejected)": "Approved",
+    ApprovedByUserID: p.AdminID,
+    UpdatedAt: new Date().toISOString()
+  });
+  return { success: true };
+}
+
+// --- ORDERS ---
+function handleGetOrders(p) {
+  let res = getSheetData('ORDERS');
+  return { success: true, data: res };
+}
+
+function handleCreateOrder(p) {
+  const o = {
+    OrderID: generateID("ORD"),
+    LeadID: p.LeadID, CustomerID: p.CustomerID, QuotationID: p.QuotationID || '',
+    ProductOrdered: p.ProductOrdered,
+    OrderQuantity: p.OrderQuantity,
+    OrderDate: new Date().toISOString(),
+    "OrderStatus (Pending/Confirmed/Dispatched/Delivered/Cancelled)": "Confirmed",
+    DispatchDate: p.DispatchDate || '',
+    DispatchSchedule: p.DispatchSchedule || '',
+    "ThankyouEmailSent (Yes/No)": "No",
+    AssignedUserID: p.AssignedUserID,
+    CreatedAt: new Date().toISOString(),
+    UpdatedAt: new Date().toISOString()
+  };
+  appendRow('ORDERS', o);
+  updateRow('LEADS', 'LeadID', p.LeadID, { "LeadStatus (New/Contacted/Quoted/Negotiating/Won/Lost)": "Won", UpdatedAt: new Date().toISOString() });
+  
+  const c = getSheetData('CUSTOMERS').find(x => x.CustomerID === p.CustomerID);
+  if (c && c.Email && String(getSettingsMap().AutoFollowUpEmailEnabled).toLowerCase() === 'true') {
+    sendThankYouEmail(o, c);
+    updateRow('ORDERS', 'OrderID', o.OrderID, { "ThankyouEmailSent (Yes/No)": "Yes" });
+  }
+
+  if (p.DispatchDate) {
+    appendRow('REMINDERS', {
+      ReminderID: generateID("REM"),
+      "Type (FollowUp/Payment/Dispatch/CrossSell/GoogleReview/Reference/Quotation)": "Dispatch",
+      LeadID: p.LeadID, OrderID: o.OrderID, PaymentID: "", CustomerID: p.CustomerID,
+      AssignedUserID: p.AssignedUserID,
+      ReminderDate: p.DispatchDate,
+      ReminderMessage: "Scheduled dispatch for order",
+      "Status (Pending/Dismissed/Completed)": "Pending",
+      CreatedAt: new Date().toISOString()
+    });
+  }
+  return { success: true, data: o };
+}
+
+function handleUpdateOrderStatus(p) {
+  updateRow('ORDERS', 'OrderID', p.OrderID, {
+    "OrderStatus (Pending/Confirmed/Dispatched/Delivered/Cancelled)": p.Status,
+    UpdatedAt: new Date().toISOString()
+  });
+  if (p.logUserID) logActivity(p.logUserID, "UPDATE", "ORDER", p.OrderID, "Status changed to " + p.Status);
+  return { success: true };
+}
+
+// --- PAYMENTS ---
+function handleGetPayments(p) {
+  return { success: true, data: getSheetData('PAYMENTS') };
+}
+
+function handleCreatePayment(p) {
+  const settings = getSettingsMap();
+  const cThresh = parseInt(settings.CreditApprovalThresholdDays) || 45;
+  let approval = "NotRequired";
+  if (p.CreditPeriodDays && parseInt(p.CreditPeriodDays) > cThresh) {
+    approval = "PendingApproval";
+  }
+
+  const pay = {
+    PaymentID: generateID("PAY"),
+    OrderID: p.OrderID, CustomerID: p.CustomerID, InvoiceNumber: p.InvoiceNumber || '',
+    TotalAmount: p.TotalAmount, PaidAmount: p.PaidAmount,
+    OutstandingAmount: p.TotalAmount - p.PaidAmount,
+    "PaymentStatus (Pending/Partial/Paid)": p.PaidAmount >= p.TotalAmount ? "Paid" : (p.PaidAmount > 0 ? "Partial" : "Pending"),
+    CreditPeriodDays: p.CreditPeriodDays || 0,
+    DueDate: p.DueDate || '',
+    PaymentReceivedDate: p.PaidAmount > 0 ? new Date().toISOString() : '',
+    "CreditApprovalStatus (NotRequired/PendingApproval/Approved/Rejected)": approval,
+    ApprovedByUserID: "",
+    "ThankyouSent (Yes/No)": "No",
+    CreatedAt: new Date().toISOString(),
+    UpdatedAt: new Date().toISOString()
+  };
+  appendRow('PAYMENTS', pay);
+  return { success: true, data: pay };
+}
+
+function handleUpdatePayment(p) {
+  p.updates.UpdatedAt = new Date().toISOString();
+  if (p.updates.PaidAmount !== undefined && p.updates.TotalAmount !== undefined) {
+      p.updates.OutstandingAmount = p.updates.TotalAmount - p.updates.PaidAmount;
+      p.updates["PaymentStatus (Pending/Partial/Paid)"] = p.updates.OutstandingAmount <= 0 ? "Paid" : (p.updates.PaidAmount > 0 ? "Partial" : "Pending");
+  }
+
+  updateRow('PAYMENTS', 'PaymentID', p.PaymentID, p.updates);
+
+  if (p.updates["PaymentStatus (Pending/Partial/Paid)"] === "Paid") {
+     const pay = getSheetData('PAYMENTS').find(x => x.PaymentID === p.PaymentID);
+     const cust = getSheetData('CUSTOMERS').find(x => x.CustomerID === pay.CustomerID);
+     if (cust && cust.Email && String(getSettingsMap().AutoFollowUpEmailEnabled).toLowerCase() === 'true' && pay["ThankyouSent (Yes/No)"] !== "Yes") {
+       sendThankYouPaymentEmail(pay, cust);
+       updateRow('PAYMENTS', 'PaymentID', p.PaymentID, { "ThankyouSent (Yes/No)": "Yes" });
+     }
+  }
+  return { success: true };
+}
+
+function handleApproveCredit(p) {
+  updateRow('PAYMENTS', 'PaymentID', p.PaymentID, {
+    "CreditApprovalStatus (NotRequired/PendingApproval/Approved/Rejected)": "Approved",
+    ApprovedByUserID: p.AdminID,
+    UpdatedAt: new Date().toISOString()
+  });
+  return { success: true };
+}
+
+// --- REMINDERS ---
+function handleGetReminders(p) {
+  let rems = getSheetData('REMINDERS');
+  if (p.AssignedUserID) rems = rems.filter(r => r.AssignedUserID === p.AssignedUserID);
+  if (p.onlyPending === true) rems = rems.filter(r => r["Status (Pending/Dismissed/Completed)"] === "Pending");
+  return { success: true, data: rems };
+}
+
+function handleUpdateReminderStatus(p) {
+  updateRow('REMINDERS', 'ReminderID', p.ReminderID, { "Status (Pending/Dismissed/Completed)": p.Status });
+  return { success: true };
+}
+
+function handleCreateReminderAction(p) {
+  const r = {
+    ReminderID: generateID("REM"),
+    "Type (FollowUp/Payment/Dispatch/CrossSell/GoogleReview/Reference/Quotation)": p.Type,
+    LeadID: p.LeadID || '', OrderID: p.OrderID || '', PaymentID: p.PaymentID || '', CustomerID: p.CustomerID || '',
+    AssignedUserID: p.AssignedUserID,
+    ReminderDate: p.ReminderDate,
+    ReminderMessage: p.ReminderMessage || '',
+    "Status (Pending/Dismissed/Completed)": "Pending",
+    CreatedAt: new Date().toISOString()
+  };
+  appendRow('REMINDERS', r);
+  return { success: true, data: r };
+}
+
+// --- SETTINGS ---
+function handleGetSettings(p) {
+  return { success: true, data: getSettingsMap() };
+}
+
+function handleUpdateSetting(p) {
+  updateRow('SETTINGS', 'SettingKey', p.SettingKey, { SettingValue: p.SettingValue, UpdatedByUserID: p.AdminID, UpdatedAt: new Date().toISOString() });
+  return { success: true };
+}
+
+// --- DASHBOARD ---
+function handleGetDashboardStats(p) {
+  const leads = getSheetData('LEADS');
+  const orders = getSheetData('ORDERS');
+  const payments = getSheetData('PAYMENTS');
+  const reminders = getSheetData('REMINDERS');
+  const quotations = getSheetData('QUOTATIONS');
+
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  const stat = {
+    totalLeads: leads.length,
+    newLeadsToday: leads.filter(l => l.CreatedAt && l.CreatedAt.startsWith(todayStr)).length,
+    pendingFollowUps: reminders.filter(r => r["Status (Pending/Dismissed/Completed)"] === "Pending" && r["Type (FollowUp/Payment/Dispatch/CrossSell/GoogleReview/Reference/Quotation)"] === "FollowUp").length,
+    quotationsSent: quotations.filter(q => q["QuotationSent (Yes/No)"] === "Yes").length,
+    ordersConfirmed: orders.filter(o => o["OrderStatus (Pending/Confirmed/Dispatched/Delivered/Cancelled)"] === "Confirmed").length,
+    pendingPayments: payments.filter(py => py["PaymentStatus (Pending/Partial/Paid)"] === "Pending").length,
+    overduePayments: payments.filter(py => py["PaymentStatus (Pending/Partial/Paid)"] !== "Paid" && py.DueDate && py.DueDate < new Date().toISOString()).length,
+  };
+
+  const sources = {};
+  leads.forEach(l => {
+    let s = l["LeadSource (Phone/Instagram/Facebook/Walk-in)"];
+    sources[s] = (sources[s] || 0) + 1;
+  });
+  stat.leadsBySource = Object.keys(sources).map(k => ({ source: k, count: sources[k] }));
+
+  const statuses = {};
+  leads.forEach(l => {
+    let s = l["LeadStatus (New/Contacted/Quoted/Negotiating/Won/Lost)"];
+    statuses[s] = (statuses[s] || 0) + 1;
+  });
+  stat.leadsByStatus = Object.keys(statuses).map(k => ({ status: k, count: statuses[k] }));
+
+  return { success: true, data: stat };
+}
+
+// --- SEEDER ---
+function createDefaultAdmin() {
+  const users = getSheetData('USERS');
+  const adminExists = users.find(u => u.Email === 'admin@citadel.com');
+  if (!adminExists) {
+    appendRow('USERS', {
+      UserID: generateID("USR"),
+      FullName: "Default Admin",
+      Email: "admin@citadel.com",
+      Phone: "0000000000",
+      "Role (Admin/Staff)": "Admin",
+      PasswordHash: hashPassword("Admin@1234"),
+      IsActive: true,
+      CreatedAt: new Date().toISOString(),
+      LastLogin: ""
+    });
+    Logger.log("Created default admin: admin@citadel.com / Admin@1234");
+  } else {
+    Logger.log("Admin already exists.");
+  }
+}
