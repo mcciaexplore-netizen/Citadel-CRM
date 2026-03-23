@@ -34,6 +34,7 @@ function handleRequest(e, method) {
       case 'createUser': result = handleCreateUser(params); break;
       case 'updateUser': result = handleUpdateUser(params); break;
       case 'deactivateUser': result = handleDeactivateUser(params); break;
+      case 'resetPassword': result = handleResetPassword(params); break;
 
       case 'getCustomers': result = handleGetCustomers(params); break;
       case 'getCustomerById': result = handleGetCustomerById(params); break;
@@ -70,6 +71,8 @@ function handleRequest(e, method) {
       case 'updateSetting': result = handleUpdateSetting(params); break;
 
       case 'getDashboardStats': result = handleGetDashboardStats(params); break;
+
+      case 'setupSheet': result = handleSetupSheet(params); break;
 
       default:
         result = { success: false, message: 'Invalid or missing action' };
@@ -142,25 +145,8 @@ function sendEmail(to, subject, htmlBody) {
   MailApp.sendEmail({ to: to, subject: subject, htmlBody: htmlBody });
 }
 
-function sendThankYouEmail(order, customer, userDetails) {
-  const subject = `Thank you for your order! (${order.OrderID})`;
-  const body = `<h2>Dear ${customer.CustomerName},</h2>
-    <p>Thank you for ordering ${order.ProductOrdered} with Citadel.</p>
-    <p>Your order quantity: ${order.OrderQuantity}</p>
-    <p>We are processing it and will dispatch it shortly.</p>
-    <p>Best Regards,<br>Team Citadel</p>`;
-  sendEmail(customer.Email, subject, body);
-}
-
-function sendThankYouPaymentEmail(payment, customer) {
-  const subject = `Payment Received - Thank You!`;
-  const body = `<h2>Dear ${customer.CustomerName},</h2>
-    <p>We have successfully received your payment of ${payment.PaidAmount} towards Invoice ${payment.InvoiceNumber}.</p>
-    <p>Outstanding Amount: ${payment.OutstandingAmount}</p>
-    <p>Thank you for your business!</p>
-    <p>Best Regards,<br>Team Citadel</p>`;
-  sendEmail(customer.Email, subject, body);
-}
+// sendThankYouEmail and sendThankYouPaymentEmail are defined in CrossSell.gs
+// (richer HTML templates). Do NOT duplicate them here — GAS shares a single global namespace.
 
 function logActivity(userID, action, entityType, entityID, details) {
   appendRow('ACTIVITY_LOGS', {
@@ -196,7 +182,7 @@ function handleLogin(p) {
       }
     }
     updateRow('USERS', 'UserID', user.UserID, { LastLogin: new Date().toISOString() });
-    return { success: true, token: "token-" + user.UserID, user: { UserID: user.UserID, FullName: user.FullName, Role: user['Role (Admin/Staff)'] } };
+    return { success: true, token: "token-" + user.UserID, user: { UserID: user.UserID, FullName: user.FullName, Role: user['Role'] } };
   }
   return { success: false, message: "Invalid credentials" };
 }
@@ -220,8 +206,8 @@ function handleCreateUser(p) {
     FullName: p.FullName,
     Email: p.Email,
     Phone: p.Phone,
-    "Role (Admin/Staff)": p.Role || 'Staff',
-    PasswordHash: hashPassword(p.Password),
+    "Role": p.Role || 'Staff',
+    PasswordHash: hashPassword(p.PasswordHash),
     IsActive: true,
     CreatedAt: new Date().toISOString(),
     LastLogin: ""
@@ -238,6 +224,13 @@ function handleUpdateUser(p) {
 function handleDeactivateUser(p) {
   updateRow('USERS', 'UserID', p.UserID, { IsActive: false });
   return { success: true, message: 'User deactivated' };
+}
+
+function handleResetPassword(p) {
+  if (!p.UserID || !p.NewPassword) return { success: false, message: 'UserID and NewPassword are required' };
+  if (p.NewPassword.length < 8) return { success: false, message: 'Password must be at least 8 characters' };
+  updateRow('USERS', 'UserID', p.UserID, { PasswordHash: hashPassword(p.NewPassword) });
+  return { success: true, message: 'Password reset successfully' };
 }
 
 // --- CUSTOMERS ---
@@ -320,15 +313,16 @@ function handleCreateLead(p) {
   };
   appendRow('LEADS', l);
   
-  // Create 3-day follow-up reminder
-  let t = new Date(); t.setDate(t.getDate() + 3);
+  // Create follow-up reminder based on configurable days
+  const followUpDays = parseInt(getSettingsMap().FollowUpDays) || 3;
+  let t = new Date(); t.setDate(t.getDate() + followUpDays);
   appendRow('REMINDERS', {
     ReminderID: generateID("REM"),
     "Type (FollowUp/Payment/Dispatch/CrossSell/GoogleReview/Reference/Quotation)": "FollowUp",
     LeadID: l.LeadID, OrderID: "", PaymentID: "", CustomerID: customerID,
     AssignedUserID: p.AssignedUserID,
     ReminderDate: t.toISOString(),
-    ReminderMessage: "Initial 3-day follow up for lead",
+    ReminderMessage: "Initial " + followUpDays + "-day follow up for lead",
     "Status (Pending/Dismissed/Completed)": "Pending",
     CreatedAt: new Date().toISOString()
   });
@@ -625,23 +619,145 @@ function handleGetDashboardStats(p) {
   return { success: true, data: stat };
 }
 
+// --- SHEET SETUP ---
+// Creates all required tabs, column headers (bold + bordered), and default settings.
+// Renames the default Sheet1 to USERS, then creates remaining tabs.
+// Safe to run multiple times — skips tabs and settings that already exist.
+function handleSetupSheet(p) {
+  try {
+    setupSheetStructure();
+    createDefaultAdmin();
+    return { success: true, message: 'Google Sheet setup complete — all tabs, headers, and default settings created.' };
+  } catch (err) {
+    return { success: false, message: 'Setup failed: ' + err.message };
+  }
+}
+
+function setupSheetStructure() {
+  var ss = getDb();
+
+  var schema = {
+    'USERS': ['UserID', 'FullName', 'Email', 'Phone', 'Role', 'PasswordHash', 'IsActive', 'CreatedAt', 'LastLogin'],
+    'CUSTOMERS': ['CustomerID', 'CustomerName', 'Phone', 'Email', 'CompanyName', 'City', 'GSTNumber', 'AssignedUserID', 'CreatedAt'],
+    'LEADS': ['LeadID', 'CustomerID', 'LeadSource (Phone/Instagram/Facebook/Walk-in)', 'ProductRequired (AAC Blocks/Citabond Mortar/Kavach Plaster)', 'LeadStatus (New/Contacted/Quoted/Negotiating/Won/Lost)', 'AssignedUserID', 'CreatedAt', 'UpdatedAt'],
+    'INTERACTIONS': ['InteractionID', 'LeadID', 'CustomerID', 'InteractionDate', 'Feedback (Call not received/Spoke with customer/Details shared/Waiting for approval/Other)', 'Notes', 'NextFollowUpDate', 'FollowUpStatus (Pending/Completed)', 'CreatedByUserID', 'CreatedAt'],
+    'QUOTATIONS': ['QuotationID', 'LeadID', 'CustomerID', 'QuotedPricePerUnit', 'Quantity', 'TotalValue', 'QuotationDate', 'ApprovalStatus (NotRequired/PendingApproval/Approved/Rejected)', 'ApprovedByUserID', 'CreatedAt'],
+    'ORDERS': ['OrderID', 'LeadID', 'CustomerID', 'ProductOrdered', 'OrderQuantity', 'OrderDate', 'DispatchDate', 'Status', 'ThankyouEmailSent (Yes/No)', 'AssignedUserID', 'CreatedAt'],
+    'PAYMENTS': ['PaymentID', 'OrderID', 'CustomerID', 'InvoiceNumber', 'TotalAmount', 'PaidAmount', 'OutstandingAmount', 'PaymentStatus (Pending/Partial/Paid)', 'CreditPeriodDays', 'CreditApproval (NotRequired/PendingApproval/Approved)', 'DueDate', 'ThankyouSent (Yes/No)', 'AssignedUserID', 'CreatedAt'],
+    'REMINDERS': ['ReminderID', 'Type (FollowUp/Payment/Dispatch/CrossSell/GoogleReview/Reference/Quotation)', 'LeadID', 'OrderID', 'PaymentID', 'CustomerID', 'AssignedUserID', 'ReminderDate', 'ReminderMessage', 'Status (Pending/Dismissed/Completed)', 'CreatedAt'],
+    'SETTINGS': ['SettingKey', 'SettingValue', 'UpdatedByUserID', 'UpdatedAt'],
+    'ACTIVITY_LOGS': ['LogID', 'Action', 'UserID', 'Details', 'Timestamp']
+  };
+
+  var tabNames = Object.keys(schema);
+  var isFirstTab = true;
+
+  tabNames.forEach(function(tabName) {
+    var sheet = ss.getSheetByName(tabName);
+
+    if (!sheet) {
+      if (isFirstTab) {
+        // Rename the default "Sheet1" to the first tab instead of creating a new one
+        var firstSheet = ss.getSheets()[0];
+        if (firstSheet && tabNames.indexOf(firstSheet.getName()) === -1) {
+          firstSheet.setName(tabName);
+          sheet = firstSheet;
+        } else {
+          sheet = ss.insertSheet(tabName);
+        }
+        isFirstTab = false;
+      } else {
+        sheet = ss.insertSheet(tabName);
+      }
+    } else {
+      isFirstTab = false;
+    }
+
+    var headers = schema[tabName];
+    var existingData = sheet.getDataRange().getValues();
+
+    // Only write headers if Row 1 is empty or doesn't match
+    if (existingData.length === 0 || String(existingData[0][0]).trim() === '' || existingData[0][0] !== headers[0]) {
+      var headerRange = sheet.getRange(1, 1, 1, headers.length);
+      headerRange.setValues([headers]);
+
+      // Bold headers with gray background
+      headerRange.setFontWeight('bold');
+      headerRange.setBackground('#f3f4f6');
+      headerRange.setFontSize(10);
+
+      // Borders around each header cell
+      headerRange.setBorder(true, true, true, true, true, true,
+        '#d1d5db', SpreadsheetApp.BorderStyle.SOLID);
+
+      // Freeze header row so it stays visible while scrolling
+      sheet.setFrozenRows(1);
+
+      // Auto-resize columns to fit header text
+      for (var c = 1; c <= headers.length; c++) {
+        sheet.autoResizeColumn(c);
+      }
+    }
+  });
+
+  // --- Seed default SETTINGS rows (skip any that already exist) ---
+  var settingsSheet = ss.getSheetByName('SETTINGS');
+  var settingsData = settingsSheet.getDataRange().getValues();
+  var existingKeys = settingsData.slice(1).map(function(row) { return String(row[0]); });
+
+  var defaults = [
+    ['PriceApprovalThreshold', '3650'],
+    ['CreditApprovalThresholdDays', '45'],
+    ['AutoFollowUpEmailEnabled', 'true'],
+    ['CompanyName', 'Citadel'],
+    ['AdminEmail', 'admin@citadel.com'],
+    ['FollowUpDays', '3'],
+    ['FollowUpEmailResendDays', '2'],
+    ['PaymentDueLookaheadDays', '3'],
+    ['CrossSellDelayDays', '7'],
+    ['ReferenceRequestDelayDays', '2'],
+    ['GoogleReviewDelayDays', '3']
+  ];
+
+  var now = new Date().toISOString();
+  defaults.forEach(function(d) {
+    if (existingKeys.indexOf(d[0]) === -1) {
+      settingsSheet.appendRow([d[0], d[1], 'SYSTEM', now]);
+    }
+  });
+
+  // Apply borders to all settings data rows
+  var totalRows = settingsSheet.getLastRow();
+  if (totalRows > 1) {
+    var cols = settingsSheet.getDataRange().getValues()[0].length;
+    var dataRange = settingsSheet.getRange(2, 1, totalRows - 1, cols);
+    dataRange.setBorder(true, true, true, true, true, true,
+      '#e5e7eb', SpreadsheetApp.BorderStyle.SOLID);
+  }
+}
+
 // --- SEEDER ---
+// Run once from the Apps Script editor to create the initial admin account.
+// IMPORTANT: Change the password immediately after first login via Settings > Users.
 function createDefaultAdmin() {
   const users = getSheetData('USERS');
   const adminExists = users.find(u => u.Email === 'admin@citadel.com');
   if (!adminExists) {
+    // Generate a random temporary password for initial setup
+    const tempPassword = 'Citadel_' + Math.random().toString(36).slice(2, 10) + '!';
     appendRow('USERS', {
       UserID: generateID("USR"),
       FullName: "Default Admin",
       Email: "admin@citadel.com",
       Phone: "0000000000",
-      "Role (Admin/Staff)": "Admin",
-      PasswordHash: hashPassword("Admin@1234"),
+      "Role": "Admin",
+      PasswordHash: hashPassword(tempPassword),
       IsActive: true,
       CreatedAt: new Date().toISOString(),
       LastLogin: ""
     });
-    Logger.log("Created default admin: admin@citadel.com / Admin@1234");
+    Logger.log("Created default admin: admin@citadel.com");
+    Logger.log("Temporary password (change immediately): " + tempPassword);
   } else {
     Logger.log("Admin already exists.");
   }

@@ -10,35 +10,16 @@ This guide provides step-by-step instructions for deploying the Citadel CRM, con
 ## Step 1 — Google Sheets Setup
 1. Go to sheets.google.com → Create new spreadsheet.
 2. Name it: `CitadelCRM_DB`
-3. Create 10 sheets with exact tab names and column headers from the database schema:
-    - `USERS`
-    - `CUSTOMERS`
-    - `LEADS`
-    - `INTERACTIONS`
-    - `QUOTATIONS`
-    - `ORDERS`
-    - `PAYMENTS`
-    - `REMINDERS`
-    - `SETTINGS`
-    - `ACTIVITY_LOGS`
-4. In the `SETTINGS` sheet, add these 5 default rows (Key in Column A, Value in Column B):
-    - `PriceApprovalThreshold`: `3650`
-    - `CreditApprovalThresholdDays`: `45`
-    - `AutoFollowUpEmailEnabled`: `true`
-    - `CompanyName`: `Citadel`
-    - `AdminEmail`: `admin@citadel.com`
-5. Copy the **Spreadsheet ID** from the URL (the long string between `/d/` and `/edit`).
+3. **No need to manually create tabs or headers** — the automated setup handles everything (see Step 5).
 
 ## Step 2 — Apps Script Backend
-1. Go to script.google.com → New Project → Name: `CitadelCRM_API`
-2. Create 3 files: `Code.gs`, `Triggers.gs`, `CrossSell.gs` — paste the respective code provided previously.
-3. At the top of `Code.gs` set: `const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID_HERE'`
-4. Save all files.
-5. Run `createDefaultAdmin()` once (select it from the function dropdown, click Run) to seed the admin user.
-6. Deploy → New Deployment → Type: Web App → Execute as: Me → Who has access: Anyone → Deploy.
-7. Copy the **Web App URL** — this is your `VITE_APPS_SCRIPT_URL`.
-8. Run `setupTriggers()` once to install daily automation triggers.
-9. Grant permissions when prompted (Gmail, Sheets, Drive access).
+1. Open your Google Sheet from Step 1 → **Extensions** → **Apps Script**.
+2. Create 3 files: `Code.gs`, `Triggers.gs`, `CrossSell.gs` — paste the respective code.
+3. Save all files.
+4. Deploy → **New Deployment** → Type: **Web App** → Execute as: **Me** → Who has access: **Anyone** → Deploy.
+5. Copy the **Web App URL** — this is your `VITE_APPS_SCRIPT_URL`.
+6. *(Optional)* Run `setupTriggers()` once to install daily automation triggers.
+7. Grant permissions when prompted (Gmail, Sheets, Drive access).
 
 ## Step 3 — React Frontend
 1. Clone or create the React project with the defined structure.
@@ -68,10 +49,12 @@ This guide provides step-by-step instructions for deploying the Citadel CRM, con
 
 ## Step 5 — First Login & Configuration
 1. Navigate to your production URL.
-2. Login with: `admin@citadel.com` / `Admin@1234`
-3. Go to **Settings** → Update Price Approval Threshold and Credit Threshold to your values.
-4. Go to **Users** → Create staff accounts.
-5. **IMMEDIATELY** change admin password via Users → Reset Password.
+2. Go to **Settings** → Click **Setup Google Sheet** — this automatically creates all 10 sheet tabs with bold headers, borders, 11 default settings rows, and the initial admin account.
+3. Check the **Apps Script Execution Log** (in the Apps Script editor → Executions) for the randomly generated temporary admin password.
+4. Login with: `admin@citadel.com` and the temporary password from the log.
+5. **IMMEDIATELY** change the admin password via Users → Reset Password.
+6. Go to **Settings** → Configure Approval Thresholds, Email Automation, and Automation Timing.
+7. Go to **Users** → Create staff accounts.
 
 ## Maintenance Notes
 - **Google Sheets limit:** 5 million cells — sufficient for 10,000+ leads.

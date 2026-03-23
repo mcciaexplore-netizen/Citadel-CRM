@@ -1,79 +1,77 @@
 function generateCrossSellReminders(order, customer, assignedUserID) {
+  var settings = getSettingsMap();
   var allProducts = ['AAC Blocks', 'Citabond Mortar', 'Kavach Plaster'];
   var orderedProducts = order.ProductOrdered ? order.ProductOrdered.split(',').map(function(p) { return p.trim(); }) : [];
-  
+
   var missingProducts = allProducts.filter(function(p) { return orderedProducts.indexOf(p) === -1; });
-  
-  var reminderDate = dateAddDays(order.OrderDate, 7);
+
+  var crossSellDelay = parseInt(settings.CrossSellDelayDays) || 7;
+  var reminderDate = dateAddDays(order.OrderDate, crossSellDelay);
   var createdAt = new Date().toISOString();
   
   missingProducts.forEach(function(missingProduct) {
-    var reminderId = generateID('REM');
     var reminderMessage = customer.CustomerName + " ordered " + orderedProducts.join(', ') + ". Promote " + missingProduct + " for their construction project.";
-    
-    // USERS | CUSTOMERS | LEADS | INTERACTIONS | QUOTATIONS | ORDERS | PAYMENTS | REMINDERS | SETTINGS
-    // columns: ReminderID | Type | LeadID | OrderID | CustomerID | AssignedUserID | ReminderDate | ReminderMessage | Status | CreatedAt
-    var rowData = [
-      reminderId,
-      'CrossSell',
-      order.LeadID || '',
-      order.OrderID,
-      customer.CustomerID,
-      assignedUserID,
-      reminderDate,
-      reminderMessage,
-      'Pending',
-      createdAt
-    ];
-    
-    appendRow('REMINDERS', rowData);
+
+    appendRow('REMINDERS', {
+      ReminderID: generateID('REM'),
+      "Type (FollowUp/Payment/Dispatch/CrossSell/GoogleReview/Reference/Quotation)": 'CrossSell',
+      LeadID: order.LeadID || '',
+      OrderID: order.OrderID,
+      PaymentID: '',
+      CustomerID: customer.CustomerID,
+      AssignedUserID: assignedUserID,
+      ReminderDate: reminderDate,
+      ReminderMessage: reminderMessage,
+      "Status (Pending/Dismissed/Completed)": 'Pending',
+      CreatedAt: createdAt
+    });
   });
 }
 
 function generatePostSaleReminders(payment, customer, assignedUserID) {
+  var settings = getSettingsMap();
   var createdAt = new Date().toISOString();
-  
+
   // PaymentReceivedDate isn't explicitly defined in our schema so using current date or payment.UpdatedAt
-  var baseDate = new Date().toISOString().split('T')[0]; 
-  
+  var baseDate = new Date().toISOString().split('T')[0];
+
   // Row A - Reference
-  var refReminderId = generateID('REM');
-  var refDate = dateAddDays(baseDate, 2);
+  var referenceDelay = parseInt(settings.ReferenceRequestDelayDays) || 2;
+  var refDate = dateAddDays(baseDate, referenceDelay);
   var refMsg = "Ask " + customer.CustomerName + " for references to other construction sites. They completed payment for Invoice " + payment.InvoiceNumber + ".";
-  
-  var rowA = [
-    refReminderId,
-    'Reference',
-    '', // LeadID (optional for post-sale usually, or lookup)
-    payment.OrderID,
-    customer.CustomerID,
-    assignedUserID,
-    refDate,
-    refMsg,
-    'Pending',
-    createdAt
-  ];
-  
+
+  appendRow('REMINDERS', {
+    ReminderID: generateID('REM'),
+    "Type (FollowUp/Payment/Dispatch/CrossSell/GoogleReview/Reference/Quotation)": 'Reference',
+    LeadID: '',
+    OrderID: payment.OrderID,
+    PaymentID: '',
+    CustomerID: customer.CustomerID,
+    AssignedUserID: assignedUserID,
+    ReminderDate: refDate,
+    ReminderMessage: refMsg,
+    "Status (Pending/Dismissed/Completed)": 'Pending',
+    CreatedAt: createdAt
+  });
+
   // Row B - Google Review
-  var revReminderId = generateID('REM');
-  var revDate = dateAddDays(baseDate, 3);
+  var googleReviewDelay = parseInt(settings.GoogleReviewDelayDays) || 3;
+  var revDate = dateAddDays(baseDate, googleReviewDelay);
   var revMsg = "Request a Google Review from " + customer.CustomerName + " \u2014 great time to ask after successful delivery and payment.";
-  
-  var rowB = [
-    revReminderId,
-    'GoogleReview',
-    '', 
-    payment.OrderID,
-    customer.CustomerID,
-    assignedUserID,
-    revDate,
-    revMsg,
-    'Pending',
-    createdAt
-  ];
-  
-  appendRow('REMINDERS', rowA);
-  appendRow('REMINDERS', rowB);
+
+  appendRow('REMINDERS', {
+    ReminderID: generateID('REM'),
+    "Type (FollowUp/Payment/Dispatch/CrossSell/GoogleReview/Reference/Quotation)": 'GoogleReview',
+    LeadID: '',
+    OrderID: payment.OrderID,
+    PaymentID: '',
+    CustomerID: customer.CustomerID,
+    AssignedUserID: assignedUserID,
+    ReminderDate: revDate,
+    ReminderMessage: revMsg,
+    "Status (Pending/Dismissed/Completed)": 'Pending',
+    CreatedAt: createdAt
+  });
 }
 
 function dateAddDays(dateStr, days) {

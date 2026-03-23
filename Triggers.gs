@@ -9,11 +9,13 @@ function dailyReminderEngine() {
   const settings = getSettingsMap();
   
   const today = new Date();
-  const threeDaysAgo = new Date();
-  threeDaysAgo.setDate(today.getDate() - 3);
+  const followUpDays = parseInt(settings.FollowUpDays) || 3;
+  const followUpEmailResendDays = parseInt(settings.FollowUpEmailResendDays) || 2;
+  const staleDaysAgo = new Date();
+  staleDaysAgo.setDate(today.getDate() - followUpDays);
 
-  const twoDaysAgo = new Date();
-  twoDaysAgo.setDate(today.getDate() - 2);
+  const resendThreshold = new Date();
+  resendThreshold.setDate(today.getDate() - followUpEmailResendDays);
 
   const activeLeads = leads.filter(l => l['LeadStatus (New/Contacted/Quoted/Negotiating/Won/Lost)'] !== 'Won' && l['LeadStatus (New/Contacted/Quoted/Negotiating/Won/Lost)'] !== 'Lost');
 
@@ -32,7 +34,7 @@ function dailyReminderEngine() {
       }
     });
 
-    if (lastInteractionDate < threeDaysAgo) {
+    if (lastInteractionDate < staleDaysAgo) {
       // Create FollowUp reminder
       createTriggerReminder(
         "FollowUp",
@@ -41,7 +43,7 @@ function dailyReminderEngine() {
         "",
         customer.CustomerID,
         lead.AssignedUserID,
-        `Follow up with ${customer.CustomerName} - no contact in 3 days`
+        `Follow up with ${customer.CustomerName} - no contact in ${followUpDays} days`
       );
     }
 
@@ -65,7 +67,7 @@ function dailyReminderEngine() {
           }
         });
 
-        if (lastFollowUpEmailDate < twoDaysAgo && String(settings.AutoFollowUpEmailEnabled).toLowerCase() === 'true') {
+        if (lastFollowUpEmailDate < resendThreshold && String(settings.AutoFollowUpEmailEnabled).toLowerCase() === 'true') {
           // Send automated follow-up
           if (customer.Email) {
             sendFollowUpEmail(lead, customer, quotation, settings);
@@ -112,8 +114,10 @@ function dailyPaymentReminderEngine() {
   const today = new Date();
   today.setHours(0,0,0,0);
   
-  const threeDaysFromNow = new Date(today);
-  threeDaysFromNow.setDate(today.getDate() + 3);
+  const settings = getSettingsMap();
+  const paymentLookaheadDays = parseInt(settings.PaymentDueLookaheadDays) || 3;
+  const lookaheadDate = new Date(today);
+  lookaheadDate.setDate(today.getDate() + paymentLookaheadDays);
 
   const pendingPayments = payments.filter(p => p['PaymentStatus (Pending/Partial/Paid)'] === 'Pending' || p['PaymentStatus (Pending/Partial/Paid)'] === 'Partial');
 
@@ -123,7 +127,7 @@ function dailyPaymentReminderEngine() {
     const dueDate = new Date(dueDateStr);
     dueDate.setHours(0,0,0,0);
 
-    if (dueDate <= threeDaysFromNow) {
+    if (dueDate <= lookaheadDate) {
       const order = orders.find(o => o.OrderID == payment.OrderID);
       if (!order) return;
       

@@ -38,7 +38,7 @@ export const AuthProvider = ({ children }) => {
                 UserID: response.user.UserID,
                 FullName: response.user.FullName,
                 Email: response.user.Email,
-                Role: response.user.Role || response.user['Role (Admin/Staff)']
+                Role: response.user.Role
             };
 
             setUser(userData);

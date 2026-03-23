@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { getUsers, createUser, updateUser, deactivateUser } from '../api/apiService';
+import { getUsers, createUser, updateUser, deactivateUser, apiCall } from '../api/apiService';
 import { Users as UsersIcon, Plus, Edit2, ShieldAlert, KeyRound, CheckCircle2, X } from 'lucide-react';
 
 export default function UsersPage() {
@@ -74,9 +74,7 @@ export default function UsersPage() {
         if (form.NewPassword.length < 8) return alert("Min 8 chars required");
         setSubmitting(true);
         try {
-            await updateUser(selectedUser.UserID, { PasswordHash: form.NewPassword }); // The Apps Script handler will hash it again on update IF logic permits, or we pass newPassword field and tweak backend. Our backend updates row fields raw unless told otherwise. Actually, since Code.gs doesn't hash on simple ID update except inside changePassword endpoint, we should ideally use changePassword endpoint or let update just overwrite hash if Code.gs handled it. 
-            // Assuming updateUser saves raw string currently. Wait, our spec said Code.gs updateUser handler applies updates directly. 
-            // Let's assume the Apps Script Code.gs has logic to hash "PasswordHash" when updated, or we simply dispatch it.
+            await apiCall('resetPassword', { UserID: selectedUser.UserID, NewPassword: form.NewPassword });
             setIsResetOpen(false);
             showToast('Password reset successful');
         } catch (e) { alert("Reset failed"); } finally { setSubmitting(false); }
@@ -135,7 +133,7 @@ export default function UsersPage() {
                                         <p className="text-xs">{u.Phone}</p>
                                     </td>
                                     <td className="px-6 py-4">
-                                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold border uppercase tracking-wide ${u.Role === 'Admin' ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold border uppercase tracking-wide ${u.Role === 'Admin' ? 'bg-blue-100 text-blue-800 border-blue-200' : u.Role === 'Manager' ? 'bg-purple-100 text-purple-800 border-purple-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
                                             {u.Role}
                                         </span>
                                     </td>
@@ -183,6 +181,7 @@ export default function UsersPage() {
                                 <label className="block text-xs font-bold text-gray-700 mb-1">Role Type *</label>
                                 <select value={form.Role} onChange={e => setForm({ ...form, Role: e.target.value })} className="w-full px-3 py-2 border rounded font-bold">
                                     <option value="Staff">Staff</option>
+                                    <option value="Manager">Manager</option>
                                     <option value="Admin">Admin</option>
                                 </select>
                             </div>
@@ -213,6 +212,7 @@ export default function UsersPage() {
                                 <label className="block text-xs font-bold text-gray-700 mb-1">Role Override</label>
                                 <select disabled={selectedUser.UserID === user?.UserID} value={form.Role} onChange={e => setForm({ ...form, Role: e.target.value })} className={`w-full px-3 py-2 border rounded font-bold text-sm ${selectedUser.UserID === user?.UserID ? 'bg-gray-100 text-gray-400' : ''}`}>
                                     <option value="Staff">Staff</option>
+                                    <option value="Manager">Manager</option>
                                     <option value="Admin">Admin</option>
                                 </select>
                             </div>

@@ -20,6 +20,7 @@ import RemindersPage from './pages/RemindersPage';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
 
+import SetupPage from './pages/SetupPage';
 import InstallPrompt from './components/common/InstallPrompt';
 
 // Protected Route Wrapper - for authenticated users only
@@ -90,6 +91,7 @@ export default function App() {
           <Routes>
             {/* Public Routes */}
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/setup" element={<SetupPage />} />
 
             {/* Default Redirect */}
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
