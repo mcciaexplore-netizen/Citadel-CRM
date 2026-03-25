@@ -27,6 +27,7 @@ function handleRequest(e, method) {
     let result = { success: false, message: 'Unknown action' };
     
     switch (action) {
+        case 'deleteCustomers': result = handleDeleteCustomers(params); break;
       case 'login': result = handleLogin(params); break;
       case 'changePassword': result = handleChangePassword(params); break;
 
