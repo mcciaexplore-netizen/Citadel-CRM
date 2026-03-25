@@ -46,6 +46,8 @@ function handleRequest(e, method) {
       case 'getLeadById': result = handleGetLeadById(params); break;
       case 'createLead': result = handleCreateLead(params); break;
       case 'updateLead': result = handleUpdateLead(params); break;
+      case 'deleteLeads': result = handleDeleteLeads(params); break;
+      case 'deleteAllLeads': result = handleDeleteAllLeads(params); break;
 
       case 'getInteractions': result = handleGetInteractions(params); break;
       case 'createInteraction': result = handleCreateInteraction(params); break;
@@ -131,6 +133,38 @@ function updateRow(sheetName, idColumn, idValue, updateObject) {
     }
   }
   return false;
+}
+
+function deleteRows(sheetName, idColumn, idValues) {
+  const sheet = getDb().getSheetByName(sheetName);
+  if (!sheet) throw new Error("Sheet not found: " + sheetName);
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idIndex = headers.indexOf(idColumn);
+  if (idIndex === -1) throw new Error("ID Column not found: " + idColumn);
+  const idSet = new Set(idValues.map(String));
+  // Collect row numbers to delete (bottom-up to avoid index shift)
+  var rowsToDelete = [];
+  for (var i = 1; i < data.length; i++) {
+    if (idSet.has(String(data[i][idIndex]))) {
+      rowsToDelete.push(i + 1); // sheet rows are 1-indexed
+    }
+  }
+  // Delete from bottom to top
+  for (var j = rowsToDelete.length - 1; j >= 0; j--) {
+    sheet.deleteRow(rowsToDelete[j]);
+  }
+  return rowsToDelete.length;
+}
+
+function clearSheetData(sheetName) {
+  const sheet = getDb().getSheetByName(sheetName);
+  if (!sheet) throw new Error("Sheet not found: " + sheetName);
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    sheet.deleteRows(2, lastRow - 1);
+  }
+  return lastRow - 1;
 }
 
 function generateID(prefix) {
@@ -287,6 +321,27 @@ function handleCreateCustomer(p) {
   return { success: true, data: c };
 }
 
+// --- DELETE CUSTOMER(S) ---
+function handleDeleteCustomers(p) {
+  if (!p.CustomerIDs || !Array.isArray(p.CustomerIDs) || p.CustomerIDs.length === 0) {
+    return { success: false, message: 'CustomerIDs array is required' };
+  }
+  // Cascade delete: leads, quotations, orders, payments for these customers
+  var leadIDs = getSheetData('LEADS').filter(l => p.CustomerIDs.includes(l.CustomerID)).map(l => l.LeadID);
+  var quotationIDs = getSheetData('QUOTATIONS').filter(q => p.CustomerIDs.includes(q.CustomerID)).map(q => q.QuotationID);
+  var orderIDs = getSheetData('ORDERS').filter(o => p.CustomerIDs.includes(o.CustomerID)).map(o => o.OrderID);
+  var paymentIDs = getSheetData('PAYMENTS').filter(pay => p.CustomerIDs.includes(pay.CustomerID)).map(pay => pay.PaymentID);
+
+  deleteRows('LEADS', 'LeadID', leadIDs);
+  deleteRows('QUOTATIONS', 'QuotationID', quotationIDs);
+  deleteRows('ORDERS', 'OrderID', orderIDs);
+  deleteRows('PAYMENTS', 'PaymentID', paymentIDs);
+
+  var count = deleteRows('CUSTOMERS', 'CustomerID', p.CustomerIDs);
+  if (p.logUserID) logActivity(p.logUserID, "DELETE", "CUSTOMERS", p.CustomerIDs.join(','), count + ' customers deleted (cascade)');
+  return { success: true, message: count + ' customer(s) deleted', count: count };
+}
+
 function handleUpdateCustomer(p) {
   p.updates.UpdatedAt = new Date().toISOString();
   updateRow('CUSTOMERS', 'CustomerID', p.CustomerID, p.updates);
@@ -360,6 +415,32 @@ function handleUpdateLead(p) {
   updateRow('LEADS', 'LeadID', p.LeadID, p.updates);
   if (p.logUserID) logActivity(p.logUserID, "UPDATE", "LEAD", p.LeadID, JSON.stringify(p.updates));
   return { success: true, message: 'Lead updated' };
+}
+
+function handleDeleteLeads(p) {
+  if (!p.LeadIDs || !Array.isArray(p.LeadIDs) || p.LeadIDs.length === 0) {
+    return { success: false, message: 'LeadIDs array is required' };
+  }
+  // Cascade delete: quotations, orders, payments, interactions for these leads
+  var quotationIDs = getSheetData('QUOTATIONS').filter(q => p.LeadIDs.includes(q.LeadID)).map(q => q.QuotationID);
+  var orderIDs = getSheetData('ORDERS').filter(o => p.LeadIDs.includes(o.LeadID)).map(o => o.OrderID);
+  var paymentIDs = getSheetData('PAYMENTS').filter(pay => orderIDs.includes(pay.OrderID)).map(pay => pay.PaymentID);
+  var interactionIDs = getSheetData('INTERACTIONS').filter(i => p.LeadIDs.includes(i.LeadID)).map(i => i.InteractionID);
+
+  deleteRows('QUOTATIONS', 'QuotationID', quotationIDs);
+  deleteRows('ORDERS', 'OrderID', orderIDs);
+  deleteRows('PAYMENTS', 'PaymentID', paymentIDs);
+  deleteRows('INTERACTIONS', 'InteractionID', interactionIDs);
+
+  var count = deleteRows('LEADS', 'LeadID', p.LeadIDs);
+  if (p.logUserID) logActivity(p.logUserID, "DELETE", "LEADS", p.LeadIDs.join(','), count + ' leads deleted (cascade)');
+  return { success: true, message: count + ' lead(s) deleted (cascade)', count: count };
+}
+
+function handleDeleteAllLeads(p) {
+  var count = clearSheetData('LEADS');
+  if (p.logUserID) logActivity(p.logUserID, "DELETE_ALL", "LEADS", "", count + ' leads deleted');
+  return { success: true, message: 'All ' + count + ' lead(s) deleted', count: count };
 }
 
 // --- INTERACTIONS ---
@@ -445,6 +526,23 @@ function handleUpdateQuotation(p) {
   return { success: true };
 }
 
+// --- DELETE QUOTATION(S) ---
+function handleDeleteQuotations(p) {
+  if (!p.QuotationIDs || !Array.isArray(p.QuotationIDs) || p.QuotationIDs.length === 0) {
+    return { success: false, message: 'QuotationIDs array is required' };
+  }
+  // Cascade delete: orders, payments for these quotations
+  var orderIDs = getSheetData('ORDERS').filter(o => p.QuotationIDs.includes(o.QuotationID)).map(o => o.OrderID);
+  var paymentIDs = getSheetData('PAYMENTS').filter(pay => orderIDs.includes(pay.OrderID)).map(pay => pay.PaymentID);
+
+  deleteRows('ORDERS', 'OrderID', orderIDs);
+  deleteRows('PAYMENTS', 'PaymentID', paymentIDs);
+
+  var count = deleteRows('QUOTATIONS', 'QuotationID', p.QuotationIDs);
+  if (p.logUserID) logActivity(p.logUserID, "DELETE", "QUOTATIONS", p.QuotationIDs.join(','), count + ' quotations deleted (cascade)');
+  return { success: true, message: count + ' quotation(s) deleted', count: count };
+}
+
 function handleApproveQuotation(p) {
   updateRow('QUOTATIONS', 'QuotationID', p.QuotationID, {
     "ApprovalStatus (NotRequired/PendingApproval/Approved/Rejected)": "Approved",
@@ -479,10 +577,14 @@ function handleCreateOrder(p) {
   updateRow('LEADS', 'LeadID', p.LeadID, { "LeadStatus (New/Contacted/Quoted/Negotiating/Won/Lost)": "Won", UpdatedAt: new Date().toISOString() });
   
   const c = getSheetData('CUSTOMERS').find(x => x.CustomerID === p.CustomerID);
+  const rmUser = getSheetData('USERS').find(x => x.UserID === p.AssignedUserID);
   if (c && c.Email && String(getSettingsMap().AutoFollowUpEmailEnabled).toLowerCase() === 'true') {
-    sendThankYouEmail(o, c);
+    sendThankYouEmail(o, c, rmUser);
     updateRow('ORDERS', 'OrderID', o.OrderID, { "ThankyouEmailSent (Yes/No)": "Yes" });
   }
+
+  // Generate cross-sell reminders for products the customer didn't order
+  if (c) generateCrossSellReminders(o, c, p.AssignedUserID);
 
   if (p.DispatchDate) {
     appendRow('REMINDERS', {
@@ -506,6 +608,20 @@ function handleUpdateOrderStatus(p) {
   });
   if (p.logUserID) logActivity(p.logUserID, "UPDATE", "ORDER", p.OrderID, "Status changed to " + p.Status);
   return { success: true };
+}
+
+// --- DELETE ORDER(S) ---
+function handleDeleteOrders(p) {
+  if (!p.OrderIDs || !Array.isArray(p.OrderIDs) || p.OrderIDs.length === 0) {
+    return { success: false, message: 'OrderIDs array is required' };
+  }
+  // Cascade delete: payments for these orders
+  var paymentIDs = getSheetData('PAYMENTS').filter(pay => p.OrderIDs.includes(pay.OrderID)).map(pay => pay.PaymentID);
+  deleteRows('PAYMENTS', 'PaymentID', paymentIDs);
+
+  var count = deleteRows('ORDERS', 'OrderID', p.OrderIDs);
+  if (p.logUserID) logActivity(p.logUserID, "DELETE", "ORDERS", p.OrderIDs.join(','), count + ' orders deleted (cascade)');
+  return { success: true, message: count + ' order(s) deleted', count: count };
 }
 
 // --- PAYMENTS ---
@@ -555,6 +671,11 @@ function handleUpdatePayment(p) {
      if (cust && cust.Email && String(getSettingsMap().AutoFollowUpEmailEnabled).toLowerCase() === 'true' && pay["ThankyouSent (Yes/No)"] !== "Yes") {
        sendThankYouPaymentEmail(pay, cust);
        updateRow('PAYMENTS', 'PaymentID', p.PaymentID, { "ThankyouSent (Yes/No)": "Yes" });
+     }
+     // Generate post-sale reminders (reference request + Google review)
+     if (cust) {
+       const order = getSheetData('ORDERS').find(x => x.OrderID === pay.OrderID);
+       generatePostSaleReminders(pay, cust, order ? order.AssignedUserID : '');
      }
   }
   return { success: true };
@@ -736,6 +857,7 @@ function setupSheetStructure() {
     ['AutoFollowUpEmailEnabled', 'true'],
     ['CompanyName', 'Citadel'],
     ['AdminEmail', 'admin@citadel.com'],
+    ['CompanyPhone', '9657965747'],
     ['FollowUpDays', '3'],
     ['FollowUpEmailResendDays', '2'],
     ['PaymentDueLookaheadDays', '3'],

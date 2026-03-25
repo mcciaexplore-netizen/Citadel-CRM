@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { getOrders, getCustomers, updateOrderStatus } from '../api/apiService';
-import { ShoppingCart, CheckCircle2, ChevronDown, PackageSearch, Package } from 'lucide-react';
+import { getOrders, getCustomers, updateOrderStatus, deleteOrders } from '../api/apiService';
+import { ShoppingCart, CheckCircle2, ChevronDown, PackageSearch, Package, Trash2, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function OrdersPage() {
@@ -12,7 +12,30 @@ export default function OrdersPage() {
 
     const [statusFilter, setStatusFilter] = useState('All');
 
+    // Delete modal state
+    const [selectedOrderIds, setSelectedOrderIds] = useState([]);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+
     useEffect(() => {
+            const handleDeleteOrder = (orderId) => {
+                setSelectedOrderIds([orderId]);
+                setShowDeleteModal(true);
+            };
+
+            const handleDeleteSelected = async () => {
+                setDeleting(true);
+                try {
+                    await deleteOrders(selectedOrderIds, user?.UserID);
+                    setOrders(os => os.filter(o => !selectedOrderIds.includes(o.OrderID)));
+                    setShowDeleteModal(false);
+                    setSelectedOrderIds([]);
+                } catch (e) {
+                    alert("Delete failed: " + (e.message || "Unknown error"));
+                } finally {
+                    setDeleting(false);
+                }
+            };
         fetchData();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -122,8 +145,29 @@ export default function OrdersPage() {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <Link to={`/leads/${o.LeadID}`} className="text-primary font-bold hover:underline bg-blue-50 px-3 py-1.5 rounded border border-blue-100 transition-colors">View Link</Link>
+                                            <div className="flex items-center justify-end gap-2">
+                                                <Link to={`/leads/${o.LeadID}`} className="text-primary font-bold hover:underline bg-blue-50 px-3 py-1.5 rounded border border-blue-100 transition-colors">View Link</Link>
+                                                <button onClick={() => handleDeleteOrder(o.OrderID)} className="text-red-600 hover:bg-red-50 p-2 rounded transition-colors" title="Delete"><Trash2 size={16} /></button>
+                                            </div>
                                         </td>
+                                                {/* Delete Order Modal */}
+                                                {showDeleteModal && (
+                                                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+                                                        <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95">
+                                                            <div className="px-6 py-4 border-b border-red-100 bg-red-50 flex items-center gap-2">
+                                                                <AlertCircle size={18} className="text-red-600" />
+                                                                <h2 className="text-base font-bold text-red-900">Delete {selectedOrderIds.length} order{selectedOrderIds.length > 1 ? 's' : ''}?</h2>
+                                                            </div>
+                                                            <div className="p-6">
+                                                                <p className="text-sm text-gray-600">This action cannot be undone. The selected order(s) and all related payments will be permanently removed from the system.</p>
+                                                            </div>
+                                                            <div className="px-6 py-4 bg-gray-50 border-t flex justify-end gap-2">
+                                                                <button type="button" onClick={() => setShowDeleteModal(false)} className="px-4 py-2 border border-gray-300 rounded text-sm font-bold">Cancel</button>
+                                                                <button type="button" onClick={handleDeleteSelected} className="px-6 py-2 bg-red-600 text-white rounded text-sm font-bold hover:bg-red-700 shadow-sm flex items-center gap-2" disabled={deleting}><Trash2 size={16} /> Delete</button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
                                     </tr>
                                 )
                             })}

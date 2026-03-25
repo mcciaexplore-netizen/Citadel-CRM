@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { apiCall, getQuotations, getCustomers, getLeads, approveQuotation } from '../api/apiService';
-import { CheckCircle2, FileText, Download, Edit, Search } from 'lucide-react';
+import { apiCall, getQuotations, getCustomers, getLeads, approveQuotation, deleteQuotations } from '../api/apiService';
+import { CheckCircle2, FileText, Download, Edit, Search, Trash2, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function QuotationsPage() {
@@ -15,7 +15,30 @@ export default function QuotationsPage() {
     const [dateFilter, setDateFilter] = useState('All');
     const [statusFilter, setStatusFilter] = useState('All');
 
+    // Delete modal state
+    const [selectedQuotationIds, setSelectedQuotationIds] = useState([]);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+
     useEffect(() => {
+            const handleDeleteQuotation = (quotationId) => {
+                setSelectedQuotationIds([quotationId]);
+                setShowDeleteModal(true);
+            };
+
+            const handleDeleteSelected = async () => {
+                setDeleting(true);
+                try {
+                    await deleteQuotations(selectedQuotationIds, user?.UserID);
+                    setQuotations(qs => qs.filter(q => !selectedQuotationIds.includes(q.QuotationID)));
+                    setShowDeleteModal(false);
+                    setSelectedQuotationIds([]);
+                } catch (e) {
+                    alert("Delete failed: " + (e.message || "Unknown error"));
+                } finally {
+                    setDeleting(false);
+                }
+            };
         fetchData();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -145,8 +168,27 @@ export default function QuotationsPage() {
                                                 {q.DriveFileURL && (
                                                     <a href={q.DriveFileURL} target="_blank" rel="noreferrer" className="p-2 text-gray-400 hover:text-primary hover:bg-blue-50 rounded" title="Download PDF"><Download size={16} /></a>
                                                 )}
+                                                <button onClick={() => handleDeleteQuotation(q.QuotationID)} className="text-red-600 hover:bg-red-50 p-2 rounded transition-colors" title="Delete"><Trash2 size={16} /></button>
                                             </div>
                                         </td>
+                                                {/* Delete Quotation Modal */}
+                                                {showDeleteModal && (
+                                                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+                                                        <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95">
+                                                            <div className="px-6 py-4 border-b border-red-100 bg-red-50 flex items-center gap-2">
+                                                                <AlertCircle size={18} className="text-red-600" />
+                                                                <h2 className="text-base font-bold text-red-900">Delete {selectedQuotationIds.length} quotation{selectedQuotationIds.length > 1 ? 's' : ''}?</h2>
+                                                            </div>
+                                                            <div className="p-6">
+                                                                <p className="text-sm text-gray-600">This action cannot be undone. The selected quotation(s) and all related orders and payments will be permanently removed from the system.</p>
+                                                            </div>
+                                                            <div className="px-6 py-4 bg-gray-50 border-t flex justify-end gap-2">
+                                                                <button type="button" onClick={() => setShowDeleteModal(false)} className="px-4 py-2 border border-gray-300 rounded text-sm font-bold">Cancel</button>
+                                                                <button type="button" onClick={handleDeleteSelected} className="px-6 py-2 bg-red-600 text-white rounded text-sm font-bold hover:bg-red-700 shadow-sm flex items-center gap-2" disabled={deleting}><Trash2 size={16} /> Delete</button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
                                     </tr>
                                 )
                             })}

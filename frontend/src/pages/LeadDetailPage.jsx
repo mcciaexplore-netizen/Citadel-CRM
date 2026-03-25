@@ -10,7 +10,7 @@ import {
 } from '../api/apiService';
 import {
     ArrowLeft, Phone, Mail, MapPin, Building2, Calendar, FileText,
-    Clock, CheckCircle2, ChevronDown, User, MessageSquare, Download, Upload, X
+    Clock, CheckCircle2, ChevronDown, User, MessageSquare, Download, Upload, X, ShoppingCart
 } from 'lucide-react';
 
 export default function LeadDetailPage() {

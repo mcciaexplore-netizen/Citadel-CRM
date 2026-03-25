@@ -68,11 +68,16 @@ export const getCustomerById = (id) => apiCall('getCustomerById', { customerID: 
 export const createCustomer = (data) => apiCall('createCustomer', data);
 export const updateCustomer = (id, data) => apiCall('updateCustomer', { CustomerID: id, updates: data });
 
+// Delete Customers (cascade)
+export const deleteCustomers = (customerIDs, logUserID) => apiCall('deleteCustomers', { CustomerIDs: customerIDs, logUserID });
+
 // Leads
 export const getLeads = (filters = {}) => apiCall('getLeads', filters);
 export const getLeadById = (id) => apiCall('getLeadById', { leadID: id });
 export const createLead = (data) => apiCall('createLead', data);
 export const updateLead = (id, data) => apiCall('updateLead', { LeadID: id, ...data });
+export const deleteLeads = (leadIDs, logUserID) => apiCall('deleteLeads', { LeadIDs: leadIDs, logUserID });
+export const deleteAllLeads = (logUserID) => apiCall('deleteAllLeads', { logUserID });
 
 // Interactions
 export const getInteractions = (leadId) => apiCall('getInteractions', { LeadID: leadId });
@@ -84,10 +89,16 @@ export const createQuotation = (data) => apiCall('createQuotation', data);
 export const updateQuotation = (id, data) => apiCall('updateQuotation', { QuotationID: id, updates: data });
 export const approveQuotation = (id) => apiCall('approveQuotation', { QuotationID: id });
 
+// Delete Quotations (cascade)
+export const deleteQuotations = (quotationIDs, logUserID) => apiCall('deleteQuotations', { QuotationIDs: quotationIDs, logUserID });
+
 // Orders
 export const getOrders = (filters = {}) => apiCall('getOrders', filters);
 export const createOrder = (data) => apiCall('createOrder', data);
 export const updateOrderStatus = (id, status) => apiCall('updateOrderStatus', { OrderID: id, Status: status });
+
+// Delete Orders (cascade)
+export const deleteOrders = (orderIDs, logUserID) => apiCall('deleteOrders', { OrderIDs: orderIDs, logUserID });
 
 // Payments
 export const getPayments = (filters = {}) => apiCall('getPayments', filters);

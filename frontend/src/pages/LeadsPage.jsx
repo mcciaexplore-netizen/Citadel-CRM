@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { getLeads, getCustomers, getUsers, createLead, updateLead } from '../api/apiService';
+import { getLeads, getCustomers, getUsers, createLead, updateLead, deleteLeads, deleteAllLeads } from '../api/apiService';
 import { getVisibleLeads } from '../utils/permissions';
 import { useSyncData } from '../hooks/useSyncData';
 import {
-    Search, Filter, Plus, User, Phone, Building2, Package, MapPin, Tag,
-    Calendar, MessageSquare, ChevronDown, ChevronRight, X, AlertCircle, CheckCircle2,
+    Search, Plus, User, Phone, Building2, Trash2, MoreHorizontal,
+    MessageSquare, ChevronDown, ChevronRight, X, AlertCircle, CheckCircle2,
     ChevronLeft, Upload, RefreshCw
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -64,6 +64,14 @@ export default function LeadsPage() {
     const [submitting, setSubmitting] = useState(false);
     const [toastMessage, setToastMessage] = useState('');
 
+    // Selection & Delete state
+    const [selectedIds, setSelectedIds] = useState(new Set());
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
+    const [deleteAllConfirmText, setDeleteAllConfirmText] = useState('');
+    const [deleting, setDeleting] = useState(false);
+    const [showMoreMenu, setShowMoreMenu] = useState(false);
+
     useEffect(() => {
         fetchData();
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -95,12 +103,63 @@ export default function LeadsPage() {
     };
 
     // -------------------------
+    // Selection Logic
+    // -------------------------
+    const toggleSelect = (id) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === filteredLeads.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(filteredLeads.map(l => l.LeadID)));
+        }
+    };
+
+    const handleDeleteSelected = async () => {
+        setDeleting(true);
+        try {
+            const ids = Array.from(selectedIds);
+            await deleteLeads(ids, user?.UserID);
+            showToast(`${ids.length} lead(s) deleted`);
+            setSelectedIds(new Set());
+            setShowDeleteModal(false);
+            fetchData();
+        } catch (e) {
+            alert("Delete failed: " + (e.message || "Unknown error"));
+        } finally {
+            setDeleting(false);
+        }
+    };
+
+    const handleDeleteAll = async () => {
+        setDeleting(true);
+        try {
+            await deleteAllLeads(user?.UserID);
+            showToast("All leads deleted");
+            setSelectedIds(new Set());
+            setShowDeleteAllModal(false);
+            setDeleteAllConfirmText('');
+            fetchData();
+        } catch (e) {
+            alert("Delete failed: " + (e.message || "Unknown error"));
+        } finally {
+            setDeleting(false);
+        }
+    };
+
+    // -------------------------
     // Filtering Logic
     // -------------------------
     const filteredLeads = leads.filter(l => {
         const cust = customers.find(c => c.CustomerID === l.CustomerID);
         const cName = cust?.CustomerName?.toLowerCase() || '';
-        const cPhone = cust?.Phone || '';
+        const cPhone = (cust?.Phone ?? '').toString();
         const cComp = cust?.CompanyName?.toLowerCase() || '';
 
         const matchesSearch = cName.includes(searchTerm.toLowerCase()) ||
@@ -157,7 +216,10 @@ export default function LeadsPage() {
 
     const checkExistingPhone = () => {
         if (formData.Phone && formData.Phone.length >= 10) {
-            const match = customers.find(c => c.Phone.includes(formData.Phone) || formData.Phone.includes(c.Phone));
+            const match = customers.find(c => {
+                const cPhone = (c.Phone ?? '').toString();
+                return cPhone.includes(formData.Phone) || formData.Phone.includes(cPhone);
+            });
             if (match && formData.existingCustomerID !== match.CustomerID) {
                 setExistingCustomerAlert(match);
             }
@@ -542,8 +604,49 @@ export default function LeadsPage() {
                     >
                         <Plus size={18} /> New Lead
                     </button>
+                    {isAdmin && (
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowMoreMenu(!showMoreMenu)}
+                                className="flex items-center justify-center p-2.5 rounded-md border border-gray-300 text-gray-500 hover:bg-gray-50 transition-colors shadow-sm"
+                                title="More actions"
+                            >
+                                <MoreHorizontal size={18} />
+                            </button>
+                            {showMoreMenu && (
+                                <>
+                                    <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
+                                    <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50 py-1">
+                                        <button
+                                            onClick={() => { setShowMoreMenu(false); setShowDeleteAllModal(true); }}
+                                            className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 font-medium flex items-center gap-2"
+                                        >
+                                            <Trash2 size={16} /> Delete All Leads
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
+
+            {/* Bulk Action Bar */}
+            {selectedIds.size > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-center justify-between shadow-sm animate-in slide-in-from-top-2">
+                    <div className="flex items-center gap-3">
+                        <input type="checkbox" checked readOnly className="w-4 h-4 text-primary rounded" />
+                        <span className="text-sm font-bold text-blue-800">{selectedIds.size} lead{selectedIds.size > 1 ? 's' : ''} selected</span>
+                        <button onClick={() => setSelectedIds(new Set())} className="text-xs text-blue-600 hover:text-blue-800 underline">Clear</button>
+                    </div>
+                    <button
+                        onClick={() => setShowDeleteModal(true)}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-lg hover:bg-red-700 transition-colors shadow-sm"
+                    >
+                        <Trash2 size={16} /> Delete Selected
+                    </button>
+                </div>
+            )}
 
             {/* Main Content Area */}
             {loading ? (
@@ -570,6 +673,14 @@ export default function LeadsPage() {
                             <table className="w-full text-left border-collapse">
                                 <thead>
                                     <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 text-xs uppercase tracking-wider">
+                                        {isAdmin && <th className="pl-6 pr-2 py-4 w-10">
+                                            <input
+                                                type="checkbox"
+                                                checked={filteredLeads.length > 0 && selectedIds.size === filteredLeads.length}
+                                                onChange={toggleSelectAll}
+                                                className="w-4 h-4 text-primary rounded border-gray-300 cursor-pointer"
+                                            />
+                                        </th>}
                                         <th className="px-6 py-4 font-semibold">Customer</th>
                                         <th className="px-6 py-4 font-semibold">Product & Source</th>
                                         <th className="px-6 py-4 font-semibold">Status</th>
@@ -585,7 +696,15 @@ export default function LeadsPage() {
                                         const status = lead['LeadStatus (New/Contacted/Quoted/Negotiating/Won/Lost)'];
 
                                         return (
-                                            <tr key={lead.LeadID} className="hover:bg-blue-50/30 transition-colors group">
+                                            <tr key={lead.LeadID} className={`transition-colors group ${selectedIds.has(lead.LeadID) ? 'bg-blue-50' : 'hover:bg-blue-50/30'}`}>
+                                                {isAdmin && <td className="pl-6 pr-2 py-4" onClick={e => e.stopPropagation()}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedIds.has(lead.LeadID)}
+                                                        onChange={() => toggleSelect(lead.LeadID)}
+                                                        className="w-4 h-4 text-primary rounded border-gray-300 cursor-pointer"
+                                                    />
+                                                </td>}
                                                 <td className="px-6 py-4">
                                                     <div className="flex items-center gap-3">
                                                         <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold shrink-0">
@@ -690,6 +809,61 @@ export default function LeadsPage() {
                         })}
                     </div>
                 </>
+            )}
+
+            {/* --- DELETE SELECTED MODAL --- */}
+            {showDeleteModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95">
+                        <div className="px-6 py-4 border-b border-red-100 bg-red-50 flex items-center gap-2">
+                            <Trash2 size={18} className="text-red-600" />
+                            <h2 className="text-base font-bold text-red-900">Delete {selectedIds.size} lead{selectedIds.size > 1 ? 's' : ''}?</h2>
+                        </div>
+                        <div className="p-6">
+                            <p className="text-sm text-gray-600">This action cannot be undone. The selected leads will be permanently removed from the system.</p>
+                        </div>
+                        <div className="px-6 py-4 bg-gray-50 border-t flex justify-end gap-2">
+                            <button onClick={() => setShowDeleteModal(false)} disabled={deleting} className="px-4 py-2 border rounded-lg font-bold text-sm bg-white hover:bg-gray-100">Cancel</button>
+                            <button onClick={handleDeleteSelected} disabled={deleting} className="px-5 py-2 bg-red-600 text-white rounded-lg font-bold text-sm hover:bg-red-700 disabled:opacity-50 shadow-sm flex items-center gap-1.5">
+                                {deleting ? <><div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div> Deleting...</> : <><Trash2 size={16} /> Delete</>}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* --- DELETE ALL MODAL --- */}
+            {showDeleteAllModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95">
+                        <div className="px-6 py-4 border-b border-red-100 bg-red-50 flex items-center gap-2">
+                            <AlertCircle size={18} className="text-red-600" />
+                            <h2 className="text-base font-bold text-red-900">Delete ALL leads?</h2>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-1">
+                                <p className="text-sm font-bold text-red-800">You are about to permanently delete all leads.</p>
+                                <p className="text-sm text-red-700">This action cannot be undone.</p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-700 mb-1.5">Type <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-red-600">DELETE ALL</span> to confirm:</label>
+                                <input
+                                    type="text"
+                                    value={deleteAllConfirmText}
+                                    onChange={e => setDeleteAllConfirmText(e.target.value)}
+                                    placeholder="DELETE ALL"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono text-center tracking-widest focus:border-red-500 focus:ring-red-500"
+                                />
+                            </div>
+                        </div>
+                        <div className="px-6 py-4 bg-gray-50 border-t flex justify-end gap-2">
+                            <button onClick={() => { setShowDeleteAllModal(false); setDeleteAllConfirmText(''); }} disabled={deleting} className="px-4 py-2 border rounded-lg font-bold text-sm bg-white hover:bg-gray-100">Cancel</button>
+                            <button onClick={handleDeleteAll} disabled={deleting || deleteAllConfirmText !== 'DELETE ALL'} className="px-5 py-2 bg-red-600 text-white rounded-lg font-bold text-sm hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center gap-1.5">
+                                {deleting ? <><div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div> Deleting...</> : <><Trash2 size={16} /> Delete All Leads</>}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
 
             {/* --- CREATE LEAD MODAL WIZARD --- */}

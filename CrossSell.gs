@@ -83,6 +83,9 @@ function dateAddDays(dateStr, days) {
 function sendThankYouEmail(order, customer, rmUser) {
   if (!customer.Email) return;
 
+  var settings = getSettingsMap();
+  var senderEmail = settings.AdminEmail || Session.getActiveUser().getEmail() || 'support@citadel.com';
+
   var subject = "Thank You for Your Order \u2014 Citadel";
   
   var htmlBody = 
@@ -106,11 +109,11 @@ function sendThankYouEmail(order, customer, rmUser) {
         
         "<p style='color: #555; font-weight: bold; margin-bottom: 5px;'>Your dedicated Relationship Manager:</p>" +
         "<p style='color: #555; margin: 0;'>Name: " + (rmUser ? rmUser.FullName : 'Citadel Support') + "</p>" +
-        "<p style='color: #555; margin: 0;'>Phone: " + (rmUser ? rmUser.Phone : '+91 800-000-0000') + "</p>" +
-        "<p style='color: #555; margin: 0;'>Email: " + (rmUser ? rmUser.Email : 'support@citadel.com') + "</p>" +
+        "<p style='color: #555; margin: 0;'>Phone: " + (settings.CompanyPhone || '+91 800-000-0000') + "</p>" +
+        "<p style='color: #555; margin: 0;'>Email: " + senderEmail + "</p>" +
         
         "<div style='text-align: center; margin-top: 30px;'>" +
-          "<a href='mailto:" + (rmUser ? rmUser.Email : 'support@citadel.com') + "' style='background-color: #2E7D32; color: white; text-decoration: none; padding: 12px 25px; border-radius: 4px; font-weight: bold; display: inline-block;'>Contact Your RM</a>" +
+          "<a href='mailto:" + senderEmail + "' style='background-color: #2E7D32; color: white; text-decoration: none; padding: 12px 25px; border-radius: 4px; font-weight: bold; display: inline-block;'>Contact Your RM</a>" +
         "</div>" +
       "</div>" +
       "<div style='background-color: #f9f9f9; padding: 15px; text-align: center; border-top: 1px solid #eee;'>" +
