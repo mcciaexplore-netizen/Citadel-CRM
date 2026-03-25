@@ -29,6 +29,7 @@ export default function CustomersPage() {
     // Delete modal state
     const [selectedCustomerIds, setSelectedCustomerIds] = useState([]);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
     const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
@@ -70,9 +71,34 @@ export default function CustomersPage() {
         );
     });
 
+
+    const handleSelectCustomer = (customerId) => {
+        setSelectedCustomerIds(prev =>
+            prev.includes(customerId)
+                ? prev.filter(id => id !== customerId)
+                : [...prev, customerId]
+        );
+    };
+
+    const handleSelectAll = () => {
+        if (selectedCustomerIds.length === filtered.length) {
+            setSelectedCustomerIds([]);
+        } else {
+            setSelectedCustomerIds(filtered.map(c => c.CustomerID));
+        }
+    };
+
     const handleDeleteCustomer = (customerId) => {
         setSelectedCustomerIds([customerId]);
         setShowDeleteModal(true);
+    };
+
+    const handleDeleteSelectedClick = () => {
+        setShowDeleteModal(true);
+    };
+
+    const handleDeleteAllClick = () => {
+        setShowDeleteAllModal(true);
     };
 
     const handleDeleteSelected = async () => {
@@ -81,6 +107,22 @@ export default function CustomersPage() {
             await deleteCustomers(selectedCustomerIds, user?.UserID);
             showToast(`${selectedCustomerIds.length} customer(s) deleted`);
             setShowDeleteModal(false);
+            setSelectedCustomerIds([]);
+            fetchData();
+        } catch (e) {
+            alert("Delete failed: " + (e.message || "Unknown error"));
+        } finally {
+            setDeleting(false);
+        }
+    };
+
+    const handleDeleteAll = async () => {
+        setDeleting(true);
+        try {
+            const allIds = filtered.map(c => c.CustomerID);
+            await deleteCustomers(allIds, user?.UserID);
+            showToast(`${allIds.length} customer(s) deleted`);
+            setShowDeleteAllModal(false);
             setSelectedCustomerIds([]);
             fetchData();
         } catch (e) {
@@ -146,13 +188,20 @@ export default function CustomersPage() {
             <div className="space-y-6 min-h-[50vh]" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove}>
                 <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-wrap gap-4 justify-between items-center">
                     <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2"><Building2 className="text-primary" /> Customers</h2>
-                    <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-primary text-white font-bold px-4 py-2 rounded-lg hover:bg-blue-800 transition-colors"><Plus size={18} /> Add Customer</button>
+                    <div className="flex gap-2 flex-wrap">
+                        <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-primary text-white font-bold px-4 py-2 rounded-lg hover:bg-blue-800 transition-colors"><Plus size={18} /> Add Customer</button>
+                        <button onClick={handleDeleteSelectedClick} disabled={selectedCustomerIds.length === 0} className="flex items-center gap-2 bg-red-600 text-white font-bold px-4 py-2 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"><Trash2 size={18} /> Delete Selected</button>
+                        <button onClick={handleDeleteAllClick} disabled={filtered.length === 0} className="flex items-center gap-2 bg-red-500 text-white font-bold px-4 py-2 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"><Trash2 size={18} /> Delete All</button>
+                    </div>
                 </div>
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden text-sm">
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 text-xs uppercase tracking-wider">
                                 <tr>
+                                    <th className="px-2 py-4 text-center">
+                                        <input type="checkbox" checked={selectedCustomerIds.length === filtered.length && filtered.length > 0} onChange={handleSelectAll} />
+                                    </th>
                                     <th className="px-6 py-4 font-semibold">Customer Name</th>
                                     <th className="px-6 py-4 font-semibold">Phone</th>
                                     <th className="px-6 py-4 font-semibold">Company</th>
@@ -163,6 +212,9 @@ export default function CustomersPage() {
                             <tbody className="divide-y divide-gray-100">
                                 {filtered.map(c => (
                                     <tr key={c.CustomerID} className="hover:bg-gray-50 transition-colors">
+                                        <td className="px-2 py-4 text-center">
+                                            <input type="checkbox" checked={selectedCustomerIds.includes(c.CustomerID)} onChange={() => handleSelectCustomer(c.CustomerID)} />
+                                        </td>
                                         <td className="px-6 py-4 font-bold text-gray-900">{c.CustomerName}</td>
                                         <td className="px-6 py-4">{c.Phone}</td>
                                         <td className="px-6 py-4">{c.CompanyName}</td>
@@ -179,7 +231,7 @@ export default function CustomersPage() {
                 </div>
             </div>
 
-            {/* Delete Customer Modal */}
+            {/* Delete Selected Customers Modal */}
             {showDeleteModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95">
@@ -193,6 +245,25 @@ export default function CustomersPage() {
                         <div className="px-6 py-4 bg-gray-50 border-t flex justify-end gap-2">
                             <button type="button" onClick={() => setShowDeleteModal(false)} className="px-4 py-2 border border-gray-300 rounded text-sm font-bold">Cancel</button>
                             <button type="button" onClick={handleDeleteSelected} className="px-6 py-2 bg-red-600 text-white rounded text-sm font-bold hover:bg-red-700 shadow-sm flex items-center gap-2" disabled={deleting}><Trash2 size={16} /> Delete</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete All Customers Modal */}
+            {showDeleteAllModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95">
+                        <div className="px-6 py-4 border-b border-red-100 bg-red-50 flex items-center gap-2">
+                            <AlertCircle size={18} className="text-red-600" />
+                            <h2 className="text-base font-bold text-red-900">Delete ALL {filtered.length} customers?</h2>
+                        </div>
+                        <div className="p-6">
+                            <p className="text-sm text-gray-600">This action cannot be undone. All customers and all related leads, quotations, orders, and payments will be permanently removed from the system.</p>
+                        </div>
+                        <div className="px-6 py-4 bg-gray-50 border-t flex justify-end gap-2">
+                            <button type="button" onClick={() => setShowDeleteAllModal(false)} className="px-4 py-2 border border-gray-300 rounded text-sm font-bold">Cancel</button>
+                            <button type="button" onClick={handleDeleteAll} className="px-6 py-2 bg-red-600 text-white rounded text-sm font-bold hover:bg-red-700 shadow-sm flex items-center gap-2" disabled={deleting}><Trash2 size={16} /> Delete All</button>
                         </div>
                     </div>
                 </div>
