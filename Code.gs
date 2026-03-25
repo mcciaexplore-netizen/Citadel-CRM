@@ -35,6 +35,7 @@ function handleRequest(e, method) {
       case 'updateUser': result = handleUpdateUser(params); break;
       case 'deactivateUser': result = handleDeactivateUser(params); break;
       case 'resetPassword': result = handleResetPassword(params); break;
+      case 'setupAccount': result = handleSetupAccount(params); break;
 
       case 'getCustomers': result = handleGetCustomers(params); break;
       case 'getCustomerById': result = handleGetCustomerById(params); break;
@@ -231,6 +232,30 @@ function handleResetPassword(p) {
   if (p.NewPassword.length < 8) return { success: false, message: 'Password must be at least 8 characters' };
   updateRow('USERS', 'UserID', p.UserID, { PasswordHash: hashPassword(p.NewPassword) });
   return { success: true, message: 'Password reset successfully' };
+}
+
+// One-time account setup: allows changing email (only if current email is demo@user.com)
+function handleSetupAccount(p) {
+  if (!p.UserID || !p.NewEmail || !p.NewPassword) {
+    return { success: false, message: 'UserID, NewEmail, and NewPassword are required' };
+  }
+  const users = getSheetData('USERS');
+  const user = users.find(u => u.UserID === p.UserID);
+  if (!user) return { success: false, message: 'User not found' };
+  if (user.Email !== 'demo@user.com') {
+    return { success: false, message: 'Account already set up. Email can no longer be changed.' };
+  }
+  if (p.NewPassword.length < 8) return { success: false, message: 'Password must be at least 8 characters' };
+  // Check if new email is already taken
+  const emailTaken = users.find(u => u.Email.toLowerCase() === p.NewEmail.toLowerCase() && u.UserID !== p.UserID);
+  if (emailTaken) return { success: false, message: 'This email is already in use' };
+  updateRow('USERS', 'UserID', p.UserID, {
+    Email: p.NewEmail,
+    FullName: p.FullName || user.FullName,
+    Phone: p.Phone || user.Phone,
+    PasswordHash: hashPassword(p.NewPassword)
+  });
+  return { success: true, message: 'Account setup complete. Use your new credentials to login.' };
 }
 
 // --- CUSTOMERS ---
@@ -737,28 +762,24 @@ function setupSheetStructure() {
 }
 
 // --- SEEDER ---
-// Run once from the Apps Script editor to create the initial admin account.
-// IMPORTANT: Change the password immediately after first login via Settings > Users.
+// Creates a demo admin account on first setup.
+// Login with demo@user.com / demo — then change email & password in Users page (one-time setup).
 function createDefaultAdmin() {
   const users = getSheetData('USERS');
-  const adminExists = users.find(u => u.Email === 'admin@citadel.com');
-  if (!adminExists) {
-    // Generate a random temporary password for initial setup
-    const tempPassword = 'Citadel_' + Math.random().toString(36).slice(2, 10) + '!';
-    appendRow('USERS', {
-      UserID: generateID("USR"),
-      FullName: "Default Admin",
-      Email: "admin@citadel.com",
-      Phone: "0000000000",
-      "Role": "Admin",
-      PasswordHash: hashPassword(tempPassword),
-      IsActive: true,
-      CreatedAt: new Date().toISOString(),
-      LastLogin: ""
-    });
-    Logger.log("Created default admin: admin@citadel.com");
-    Logger.log("Temporary password (change immediately): " + tempPassword);
-  } else {
-    Logger.log("Admin already exists.");
+  if (users.length > 0) {
+    Logger.log("Users already exist — skipping demo account creation.");
+    return;
   }
+  appendRow('USERS', {
+    UserID: generateID("USR"),
+    FullName: "Demo Admin",
+    Email: "demo@user.com",
+    Phone: "0000000000",
+    "Role": "Admin",
+    PasswordHash: hashPassword("demo"),
+    IsActive: true,
+    CreatedAt: new Date().toISOString(),
+    LastLogin: ""
+  });
+  Logger.log("Created demo admin: demo@user.com / demo");
 }

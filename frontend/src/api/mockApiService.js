@@ -3,7 +3,7 @@
 function createInitialMockDB() {
     return {
         users: [
-            { UserID: 'USR-001', FullName: 'Admin User', Email: 'admin@citadel.com', Phone: '9876543210', Role: 'Admin', IsActive: true },
+            { UserID: 'USR-001', FullName: 'Demo Admin', Email: 'demo@user.com', Phone: '0000000000', Role: 'Admin', IsActive: true },
             { UserID: 'USR-002', FullName: 'Rajesh Kumar', Email: 'manager1@citadel.com', Phone: '9876543211', Role: 'Manager', IsActive: true },
             { UserID: 'USR-003', FullName: 'Priya Singh', Email: 'manager2@citadel.com', Phone: '9876543212', Role: 'Manager', IsActive: true },
             { UserID: 'USR-004', FullName: 'Amit Patel', Email: 'user1@citadel.com', Phone: '9876543213', Role: 'User', IsActive: true },
@@ -101,7 +101,7 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Mock passwords — dev only, never shipped in production bundle
 const MOCK_PASSWORDS = {
-    'admin@citadel.com': 'Admin@1234',
+    'demo@user.com': 'demo',
     'manager1@citadel.com': 'Manager@1234',
     'manager2@citadel.com': 'Manager@1234',
     'user1@citadel.com': 'User@1234',

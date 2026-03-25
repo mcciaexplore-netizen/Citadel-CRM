@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getUsers, createUser, updateUser, deactivateUser, apiCall } from '../api/apiService';
-import { Users as UsersIcon, Plus, Edit2, ShieldAlert, KeyRound, CheckCircle2, X } from 'lucide-react';
+import { Users as UsersIcon, Plus, Edit2, ShieldAlert, KeyRound, CheckCircle2, X, UserCog } from 'lucide-react';
 
 export default function UsersPage() {
     const { user, isAdmin } = useAuth();
@@ -13,6 +13,7 @@ export default function UsersPage() {
     const [isAddOpen, setIsAddOpen] = useState(false);
     const [isEditOpen, setIsEditOpen] = useState(false);
     const [isResetOpen, setIsResetOpen] = useState(false);
+    const [isSetupOpen, setIsSetupOpen] = useState(false);
 
     const [selectedUser, setSelectedUser] = useState(null);
     const [form, setForm] = useState({});
@@ -89,6 +90,26 @@ export default function UsersPage() {
         } catch (e) { alert("Deactivation failed"); }
     };
 
+    const handleSetupSubmit = async (e) => {
+        e.preventDefault();
+        if (form.NewPassword.length < 8) return alert("Password must be at least 8 characters");
+        if (!form.NewEmail) return alert("Email is required");
+        setSubmitting(true);
+        try {
+            const res = await apiCall('setupAccount', {
+                UserID: selectedUser.UserID,
+                NewEmail: form.NewEmail,
+                NewPassword: form.NewPassword,
+                FullName: form.FullName,
+                Phone: form.Phone
+            });
+            if (res.success === false) throw new Error(res.message);
+            setIsSetupOpen(false);
+            showToast('Account setup complete! Please login with your new credentials.');
+            fetchData();
+        } catch (e) { alert("Setup failed: " + (e.message || "Unknown error")); } finally { setSubmitting(false); }
+    };
+
     if (!isAdmin) return <Navigate to="/" replace />;
     if (loading) return <div className="p-8 text-center text-gray-500 animate-pulse">Loading directory...</div>;
 
@@ -149,8 +170,14 @@ export default function UsersPage() {
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex items-center justify-end gap-2">
-                                            <button onClick={() => { setSelectedUser(u); setForm({ FullName: u.FullName, Phone: u.Phone || '', Role: u.Role }); setIsEditOpen(true); }} className="p-1.5 text-gray-400 hover:text-primary bg-white border border-gray-200 hover:border-blue-200 rounded shadow-sm" title="Edit Profile"><Edit2 size={16} /></button>
-                                            <button onClick={() => { setSelectedUser(u); setForm({ NewPassword: '' }); setIsResetOpen(true); }} className="p-1.5 text-gray-400 hover:text-orange-600 bg-white border border-gray-200 hover:border-orange-200 rounded shadow-sm" title="Reset Password"><KeyRound size={16} /></button>
+                                            {u.Email === 'demo@user.com' ? (
+                                                <button onClick={() => { setSelectedUser(u); setForm({ FullName: u.FullName, Phone: u.Phone || '', NewEmail: '', NewPassword: '' }); setIsSetupOpen(true); }} className="flex items-center gap-1.5 px-3 py-1.5 text-white bg-emerald-600 hover:bg-emerald-700 rounded shadow-sm font-bold text-xs" title="Setup Account"><UserCog size={14} /> Setup Account</button>
+                                            ) : (
+                                                <>
+                                                    <button onClick={() => { setSelectedUser(u); setForm({ FullName: u.FullName, Phone: u.Phone || '', Role: u.Role }); setIsEditOpen(true); }} className="p-1.5 text-gray-400 hover:text-primary bg-white border border-gray-200 hover:border-blue-200 rounded shadow-sm" title="Edit Profile"><Edit2 size={16} /></button>
+                                                    <button onClick={() => { setSelectedUser(u); setForm({ NewPassword: '' }); setIsResetOpen(true); }} className="p-1.5 text-gray-400 hover:text-orange-600 bg-white border border-gray-200 hover:border-orange-200 rounded shadow-sm" title="Reset Password"><KeyRound size={16} /></button>
+                                                </>
+                                            )}
                                             {u.UserID !== user?.UserID && (u.IsActive === 'TRUE' || u.IsActive === true) && (
                                                 <button onClick={() => handleDeactivate(u.UserID)} className="p-1.5 text-red-400 hover:text-white hover:bg-red-500 bg-white border border-gray-200 hover:border-red-500 rounded shadow-sm" title="Deactivate"><ShieldAlert size={16} /></button>
                                             )}
@@ -220,6 +247,43 @@ export default function UsersPage() {
                         <div className="px-6 py-4 bg-gray-50 border-t flex justify-end gap-2">
                             <button type="button" onClick={() => setIsEditOpen(false)} className="px-4 py-2 border rounded font-bold text-sm bg-white">Cancel</button>
                             <button type="submit" disabled={submitting} className="px-5 py-2 bg-primary text-white rounded font-bold text-sm hover:bg-blue-800">Update Profile</button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
+            {/* --- SETUP ACCOUNT MODAL (one-time for demo@user.com) --- */}
+            {isSetupOpen && selectedUser && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+                    <form onSubmit={handleSetupSubmit} className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95">
+                        <div className="px-6 py-4 border-b border-emerald-100 flex justify-between items-center bg-emerald-50">
+                            <h2 className="text-base font-bold text-emerald-900 flex items-center gap-1.5"><UserCog size={16} /> Initial Account Setup</h2>
+                            <button type="button" onClick={() => setIsSetupOpen(false)} className="text-gray-400 hover:text-gray-700"><X size={20} /></button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <p className="text-sm text-gray-600 leading-relaxed bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                                This is a <span className="font-bold">one-time setup</span>. Replace the demo credentials with your real admin email and password. After this, email cannot be changed.
+                            </p>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-700 mb-1">Full Name *</label>
+                                <input required type="text" value={form.FullName} onChange={e => setForm({ ...form, FullName: e.target.value })} className="w-full px-3 py-2 border rounded text-sm" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-700 mb-1">New Email (Login ID) *</label>
+                                <input required type="email" value={form.NewEmail} onChange={e => setForm({ ...form, NewEmail: e.target.value })} placeholder="your-email@company.com" className="w-full px-3 py-2 border rounded text-sm focus:border-emerald-500 focus:ring-emerald-500" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-700 mb-1">Phone</label>
+                                <input type="text" maxLength={10} value={form.Phone} onChange={e => setForm({ ...form, Phone: e.target.value })} className="w-full px-3 py-2 border rounded text-sm" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-700 mb-1">New Password (Min 8) *</label>
+                                <input required type="text" value={form.NewPassword} onChange={e => setForm({ ...form, NewPassword: e.target.value })} minLength={8} className="w-full px-3 py-2 border rounded bg-gray-50 font-mono tracking-widest text-lg text-center focus:border-emerald-500 focus:ring-emerald-500" />
+                            </div>
+                        </div>
+                        <div className="px-6 py-4 bg-gray-50 border-t flex justify-end gap-2">
+                            <button type="button" onClick={() => setIsSetupOpen(false)} className="px-4 py-2 border rounded font-bold text-sm bg-white hover:bg-gray-100">Cancel</button>
+                            <button type="submit" disabled={submitting} className="px-5 py-2 bg-emerald-600 text-white rounded font-bold text-sm hover:bg-emerald-700 disabled:opacity-50 shadow-sm">Complete Setup</button>
                         </div>
                     </form>
                 </div>

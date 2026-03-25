@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { apiCall } from '../api/apiService';
-import { Eye, EyeOff, ShieldAlert, KeyRound, CheckCircle2 } from 'lucide-react';
+import { Eye, EyeOff, ShieldAlert, KeyRound, CheckCircle2, Database } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function LoginPage() {
@@ -15,6 +15,8 @@ export default function LoginPage() {
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [isFirstTime, setIsFirstTime] = useState(false);
+    const [checking, setChecking] = useState(true);
 
     // If already logged in, shunt to dashboard
     useEffect(() => {
@@ -22,6 +24,26 @@ export default function LoginPage() {
             navigate('/dashboard', { replace: true });
         }
     }, [user, navigate]);
+
+    // Check if the system has any users — if not, it's a fresh install
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await apiCall('getUsers');
+                if (!cancelled) {
+                    const users = res?.data || res || [];
+                    setIsFirstTime(!Array.isArray(users) || users.length === 0);
+                }
+            } catch {
+                // If API fails entirely, likely not configured — show setup
+                if (!cancelled) setIsFirstTime(true);
+            } finally {
+                if (!cancelled) setChecking(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -128,7 +150,25 @@ export default function LoginPage() {
 
                     </form>
 
-                    <div className="mt-8 text-center border-t border-gray-100 pt-6">
+                    {!checking && isFirstTime && (
+                        <Link to="/setup" className="mt-6 flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-4 hover:bg-emerald-100 transition-colors group">
+                            <div className="bg-emerald-600 text-white p-2 rounded-lg shrink-0 group-hover:scale-110 transition-transform">
+                                <Database size={18} />
+                            </div>
+                            <div>
+                                <p className="text-sm font-bold text-emerald-800">Setting up for the first time?</p>
+                                <p className="text-xs text-emerald-600 mt-0.5">Click here to initialize your database and create your admin account →</p>
+                            </div>
+                        </Link>
+                    )}
+
+                    {!checking && !isFirstTime && (
+                        <div className="mt-6 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-center">
+                            <p className="text-xs text-gray-500 font-medium">Demo credentials: <span className="font-mono font-bold text-gray-700">demo@user.com</span> <span className="text-gray-400 mx-0.5">/</span> <span className="font-mono font-bold text-gray-700">demo</span></p>
+                        </div>
+                    )}
+
+                    <div className="mt-4 text-center border-t border-gray-100 pt-4">
                         <p className="text-xs text-gray-400 font-medium">Protected by 256-bit SHA Vaulting</p>
                     </div>
 

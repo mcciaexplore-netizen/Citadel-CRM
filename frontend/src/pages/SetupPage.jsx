@@ -43,7 +43,7 @@ export default function SetupPage() {
                                     <li className="flex items-start gap-2"><span className="text-emerald-500 mt-0.5">&#10003;</span> 10 sheet tabs (USERS, CUSTOMERS, LEADS, etc.)</li>
                                     <li className="flex items-start gap-2"><span className="text-emerald-500 mt-0.5">&#10003;</span> Column headers with bold formatting and borders</li>
                                     <li className="flex items-start gap-2"><span className="text-emerald-500 mt-0.5">&#10003;</span> 11 default system settings</li>
-                                    <li className="flex items-start gap-2"><span className="text-emerald-500 mt-0.5">&#10003;</span> Default admin account (admin@citadel.com)</li>
+                                    <li className="flex items-start gap-2"><span className="text-emerald-500 mt-0.5">&#10003;</span> Demo admin account (<span className="font-mono text-xs">demo@user.com</span>)</li>
                                 </ul>
                                 <p className="text-xs text-gray-400">Safe to run multiple times — skips anything that already exists.</p>
                             </div>
@@ -65,14 +65,19 @@ export default function SetupPage() {
                             <div className="text-center space-y-3 py-2">
                                 <CheckCircle2 size={48} className="text-emerald-500 mx-auto" />
                                 <h2 className="text-lg font-bold text-gray-800">Setup Complete!</h2>
-                                <div className="text-sm text-gray-600 space-y-2 text-left bg-gray-50 rounded-lg p-4">
-                                    <p><span className="font-bold">Next steps:</span></p>
-                                    <ol className="list-decimal ml-4 space-y-1">
-                                        <li>Go to the <span className="font-bold">Apps Script editor</span> → <span className="font-mono text-xs">Executions</span> tab</li>
-                                        <li>Find the temporary admin password in the execution log</li>
-                                        <li>Login with <span className="font-mono text-xs bg-gray-200 px-1 rounded">admin@citadel.com</span> + that password</li>
-                                        <li>Change the password immediately via Users → Reset Password</li>
-                                    </ol>
+                                <div className="text-sm text-gray-600 space-y-3 text-left bg-gray-50 rounded-lg p-4">
+                                    <p className="font-bold">Login with these demo credentials:</p>
+                                    <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-1.5">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs text-gray-500">Email</span>
+                                            <span className="font-mono text-sm font-bold text-gray-800">demo@user.com</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs text-gray-500">Password</span>
+                                            <span className="font-mono text-sm font-bold text-gray-800">demo</span>
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-amber-600 font-medium">After login, go to Users → Setup Account to replace these with your real credentials (one-time).</p>
                                 </div>
                             </div>
 
