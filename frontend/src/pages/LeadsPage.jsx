@@ -7,7 +7,7 @@ import { useSyncData } from '../hooks/useSyncData';
 import {
     Search, Plus, User, Phone, Building2, Trash2, MoreHorizontal,
     MessageSquare, ChevronDown, ChevronRight, X, AlertCircle, CheckCircle2,
-    ChevronLeft, Upload, RefreshCw
+    ChevronLeft, Upload, RefreshCw, Edit
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { processLeadWorkbook } from '../utils/sheetsImportHelper';
@@ -290,65 +290,79 @@ export default function LeadsPage() {
 
     const handleSubmit = async () => {
         if (!validateStep3()) return;
-
         setSubmitting(true);
         try {
-            const payload = {
-                AssignedUserID: formData.AssignedUserID || user?.UserID,
-                CustomerID: formData.existingCustomerID || '',
-                CustomerData: formData.existingCustomerID ? null : {
+            if (formData.LeadID) {
+                // Edit mode
+                const updates = {
                     CustomerName: formData.CustomerName,
                     Phone: formData.Phone,
                     Email: formData.Email,
                     CompanyName: formData.CompanyName,
                     City: formData.City,
-                    GSTNumber: formData.GSTNumber
-                },
-                LeadSource: formData.LeadSource,
-                AdName: formData.AdName,
-                CampaignName: formData.CampaignName,
-                ProductRequired: formData.ProductRequired.join(', '),
-                QuantityRequired: formData.Quantity ? `${formData.Quantity} ${formData.Unit}` : '',
-                RequirementTimeline: formData.RequirementTimeline
-            };
-
-            const res = await createLead(payload);
-
-            // We also need to log the initial interaction
-            // (This could be wrapped in createLead on backend, but since we didn't add it there perfectly matching this payload, we do 2 calls or handle it contextually)
-            // Actually our createLead in Code.gs doesn't take Interaction data in the same call.
-            // So we must fire createInteraction as well!
-
-            if (res.LeadID) {
-                await import('../api/apiService').then(api => {
-                    return api.createInteraction({
-                        LeadID: res.LeadID,
-                        CustomerID: res.CustomerID,
-                        Type: 'Call', // Default for initial Creation wizard
-                        Feedback: formData.Feedback,
-                        Remark1: formData.Remark1,
-                        Remark2: formData.Remark2,
-                        NextFollowUpDate: formData.NextFollowUpDate,
-                        CreatedByUserID: user?.UserID
+                    GSTNumber: formData.GSTNumber,
+                    LeadSource: formData.LeadSource,
+                    AdName: formData.AdName,
+                    CampaignName: formData.CampaignName,
+                    ProductRequired: formData.ProductRequired.join(', '),
+                    QuantityRequired: formData.Quantity ? `${formData.Quantity} ${formData.Unit}` : '',
+                    RequirementTimeline: formData.RequirementTimeline,
+                    Feedback: formData.Feedback,
+                    Remark1: formData.Remark1,
+                    Remark2: formData.Remark2,
+                    NextFollowUpDate: formData.NextFollowUpDate,
+                    AssignedUserID: formData.AssignedUserID || user?.UserID
+                };
+                await updateLead(formData.LeadID, updates);
+                showToast("Lead updated successfully!");
+            } else {
+                // Create mode
+                const payload = {
+                    AssignedUserID: formData.AssignedUserID || user?.UserID,
+                    CustomerID: formData.existingCustomerID || '',
+                    CustomerData: formData.existingCustomerID ? null : {
+                        CustomerName: formData.CustomerName,
+                        Phone: formData.Phone,
+                        Email: formData.Email,
+                        CompanyName: formData.CompanyName,
+                        City: formData.City,
+                        GSTNumber: formData.GSTNumber
+                    },
+                    LeadSource: formData.LeadSource,
+                    AdName: formData.AdName,
+                    CampaignName: formData.CampaignName,
+                    ProductRequired: formData.ProductRequired.join(', '),
+                    QuantityRequired: formData.Quantity ? `${formData.Quantity} ${formData.Unit}` : '',
+                    RequirementTimeline: formData.RequirementTimeline
+                };
+                const res = await createLead(payload);
+                if (res.LeadID) {
+                    await import('../api/apiService').then(api => {
+                        return api.createInteraction({
+                            LeadID: res.LeadID,
+                            CustomerID: res.CustomerID,
+                            Type: 'Call',
+                            Feedback: formData.Feedback,
+                            Remark1: formData.Remark1,
+                            Remark2: formData.Remark2,
+                            NextFollowUpDate: formData.NextFollowUpDate,
+                            CreatedByUserID: user?.UserID
+                        });
                     });
-                });
+                }
+                showToast("Lead created successfully!");
             }
-
-            showToast("Lead created successfully!");
             setIsModalOpen(false);
-
-            // Reset form
             setModalStep(1);
             setFormData({
                 CustomerName: '', Phone: '', Email: '', CompanyName: '', City: '', GSTNumber: '', existingCustomerID: null,
                 LeadSource: '', AdName: '', CampaignName: '', ProductRequired: [], Quantity: '', Unit: 'Cubic Meters', RequirementTimeline: '', AssignedUserID: user?.UserID || '',
                 Feedback: '', Remark1: '', Remark2: '', NextFollowUpDate: ''
             });
-
-            fetchData(); // reload
+            fetchData();
         } catch (err) {
             console.error(err);
-            alert("Error creating lead. Please check console.");
+            alert(formData.LeadID ? "Error updating lead. Please check console." : "Error creating lead. Please check console.");
         } finally {
             setSubmitting(false);
         }
@@ -757,6 +771,9 @@ export default function LeadsPage() {
                                                         <button onClick={() => navigate(`/leads/${lead.LeadID}`)} className="p-2 text-gray-400 hover:text-primary hover:bg-blue-50 rounded-md transition-colors" title="View Details">
                                                             <ChevronRight size={18} />
                                                         </button>
+                                                        <button onClick={() => { setIsModalOpen(true); setModalStep(1); setFormData({ ...formData, ...lead }); }} className="p-2 text-blue-500 hover:text-white hover:bg-blue-500 rounded-md transition-colors" title="Edit Lead">
+                                                            <Edit size={18} />
+                                                        </button>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -800,7 +817,10 @@ export default function LeadsPage() {
                                         <button onClick={(e) => { e.stopPropagation(); /* handle log */ }} className="flex-1 py-2 bg-blue-50 text-primary rounded-lg text-sm font-bold flex items-center justify-center gap-2">
                                             <MessageSquare size={16} /> Log Call
                                         </button>
-                                        <button className="flex-none w-10 h-10 bg-gray-50 border border-gray-200 text-gray-600 rounded-lg flex items-center justify-center">
+                                        <button onClick={(e) => { e.stopPropagation(); setIsModalOpen(true); setModalStep(1); setFormData({ ...formData, ...lead }); }} className="flex-none w-10 h-10 bg-blue-50 border border-blue-200 text-blue-600 rounded-lg flex items-center justify-center" title="Edit Lead">
+                                            <Edit size={20} />
+                                        </button>
+                                        <button onClick={(e) => { e.stopPropagation(); navigate(`/leads/${lead.LeadID}`); }} className="flex-none w-10 h-10 bg-gray-50 border border-gray-200 text-gray-600 rounded-lg flex items-center justify-center" title="View Details">
                                             <ChevronRight size={20} />
                                         </button>
                                     </div>
@@ -872,7 +892,7 @@ export default function LeadsPage() {
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col pointer-events-auto shrink-0 animate-in zoom-in-95 duration-200">
 
                         <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center sticky top-0 bg-white z-10">
-                            <h2 className="text-xl font-bold text-gray-800">Create New Lead</h2>
+                            <h2 className="text-xl font-bold text-gray-800">{formData.LeadID ? 'Edit Lead' : 'Create New Lead'}</h2>
                             <button onClick={() => { setIsModalOpen(false); setModalStep(1); }} className="p-2 text-gray-400 hover:bg-gray-100 rounded-full transition-colors">
                                 <X size={20} />
                             </button>

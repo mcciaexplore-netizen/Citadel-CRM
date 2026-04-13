@@ -39,10 +39,30 @@ export default function QuotationsPage() {
                     setDeleting(false);
                 }
             };
-        fetchData();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+            fetchData(); 
+        }, []); 
 
+        // Move handler to component scope so it is available in JSX
+        const handleDeleteQuotation = async (quotationId, fileUrl) => {
+            setDeleteLoading(true);
+            setDeleteError(null);
+            try {
+                // Delete quotation from backend
+                await apiService.deleteQuotation(quotationId);
+                // Delete file from Firebase Storage if fileUrl exists
+                if (fileUrl) {
+                    const fileRef = ref(storage, fileUrl);
+                    await deleteObject(fileRef);
+                }
+                setQuotations((prev) => prev.filter((q) => q.id !== quotationId));
+                setShowDeleteModal(false);
+                setDeleteSuccess('Quotation deleted successfully.');
+            } catch (error) {
+                setDeleteError('Failed to delete quotation.');
+            } finally {
+                setDeleteLoading(false);
+            }
+        };
     const fetchData = async () => {
         setLoading(true);
         try {
@@ -165,8 +185,12 @@ export default function QuotationsPage() {
                                                         <button className="bg-red-50 hover:bg-red-100 text-red-700 font-bold px-3 py-1.5 rounded text-xs border border-red-200 transition-colors">Reject</button>
                                                     </>
                                                 )}
-                                                {q.DriveFileURL && (
+                                                {q.DriveFileURL ? (
                                                     <a href={q.DriveFileURL} target="_blank" rel="noreferrer" className="p-2 text-gray-400 hover:text-primary hover:bg-blue-50 rounded" title="Download PDF"><Download size={16} /></a>
+                                                ) : (
+                                                    <button disabled className="p-2 text-gray-300 bg-gray-100 rounded cursor-not-allowed" title="No PDF uploaded">
+                                                        <Download size={16} />
+                                                    </button>
                                                 )}
                                                 <button onClick={() => handleDeleteQuotation(q.QuotationID)} className="text-red-600 hover:bg-red-50 p-2 rounded transition-colors" title="Delete"><Trash2 size={16} /></button>
                                             </div>

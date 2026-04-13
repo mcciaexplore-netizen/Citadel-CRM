@@ -12,6 +12,8 @@ import {
     ArrowLeft, Phone, Mail, MapPin, Building2, Calendar, FileText,
     Clock, CheckCircle2, ChevronDown, User, MessageSquare, Download, Upload, X, ShoppingCart
 } from 'lucide-react';
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
+import { storage } from '../firebase';
 
 export default function LeadDetailPage() {
     const { id } = useParams(); // leadId
@@ -40,6 +42,10 @@ export default function LeadDetailPage() {
     const [isInteractionModalOpen, setIsInteractionModalOpen] = useState(false);
     const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+
+    const MAX_FILE_SIZE_MB = 5;
+    const MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024;
+    const [fileError, setFileError] = useState('');
 
     useEffect(() => {
         fetchData();
@@ -215,25 +221,41 @@ export default function LeadDetailPage() {
         }
     };
 
-    const handleFileUpload = (e) => {
+    const handleFileUpload = async (e) => {
+        setFileError('');
         const file = e.target.files[0];
         if (!file) return;
-        setUploadProgress(10);
-        // Simulate upload
-        const interval = setInterval(() => {
-            setUploadProgress(prev => {
-                if (prev >= 90) {
-                    clearInterval(interval);
-                    setTimeout(() => {
-                        setUploadProgress(100);
-                        setQuoForm(f => ({ ...f, DriveFileURL: `https://drive.google.com/fake-url/${file.name}` }));
-                        setTimeout(() => setUploadProgress(0), 1000);
-                    }, 500);
-                    return prev;
+        if (file.type !== 'application/pdf') {
+            setFileError('Only PDF files are allowed.');
+            return;
+        }
+        if (file.size > MAX_FILE_SIZE) {
+            setFileError(`File size must be less than ${MAX_FILE_SIZE_MB} MB.`);
+            return;
+        }
+        setUploadProgress(1);
+        try {
+            const storageRef = ref(storage, `quotations/${Date.now()}_${file.name}`);
+            const uploadTask = uploadBytesResumable(storageRef, file);
+            uploadTask.on('state_changed',
+                (snapshot) => {
+                    const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                    setUploadProgress(progress);
+                },
+                (error) => {
+                    setFileError('Upload failed. Please try again.');
+                    setUploadProgress(0);
+                },
+                async () => {
+                    const url = await getDownloadURL(uploadTask.snapshot.ref);
+                    setQuoForm(f => ({ ...f, DriveFileURL: url }));
+                    setUploadProgress(0);
                 }
-                return prev + 20;
-            });
-        }, 300);
+            );
+        } catch (err) {
+            setFileError('Upload failed. Please try again.');
+            setUploadProgress(0);
+        }
     };
 
     // --- Order Form ---
@@ -561,11 +583,11 @@ export default function LeadDetailPage() {
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-bold text-gray-700 mb-1">Upload Quotation PDF</label>
+                                    <label className="block text-sm font-bold text-gray-700 mb-1">Upload Quotation PDF <span className="text-xs font-normal text-gray-500">(PDF only, max 5MB)</span></label>
                                     <div className="flex items-center gap-4">
-                                        <input type="file" id="quoFile" onChange={handleFileUpload} className="hidden" accept=".pdf,.doc,.docx" />
-                                        <label htmlFor="quoFile" className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-bold text-gray-700 cursor-pointer hover:bg-gray-50 transition-colors shadow-sm">
-                                            <Upload size={16} /> Choose File
+                                        <input type="file" id="quoFile" onChange={handleFileUpload} className="hidden" accept="application/pdf" />
+                                        <label htmlFor="quoFile" className={`flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-bold text-gray-700 cursor-pointer hover:bg-gray-50 transition-colors shadow-sm ${uploadProgress > 0 && uploadProgress < 100 ? 'opacity-50 pointer-events-none' : ''}`}>
+                                            <Upload size={16} /> {uploadProgress === 100 ? <CheckCircle2 size={16} className="text-green-600" /> : 'Choose File'}
                                         </label>
                                         {uploadProgress > 0 && uploadProgress < 100 && (
                                             <div className="w-48 bg-gray-200 rounded-full h-2.5">
@@ -578,6 +600,7 @@ export default function LeadDetailPage() {
                                             </a>
                                         )}
                                     </div>
+                                    {fileError && <p className="text-xs text-red-600 mt-2 font-bold">{fileError}</p>}
                                 </div>
 
                                 <div>
